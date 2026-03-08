@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "clean": "rimraf dist tsconfig.tsbuildinfo",
-    "build": "rimraf dist tsconfig.tsbuildinfo && pnpm exec tsc --build --force",
+    "build": "rimraf dist && pnpm exec tsc --skipLibCheck --noEmitOnError false",
     "dev": "pnpm exec tsc -p tsconfig.json --watch"
   },
   "dependencies": {
