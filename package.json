@@ -9,7 +9,7 @@
     "dev": "pnpm --filter @mavibase/server dev",
     "dev:console": "pnpm --filter @mavibase/console dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:console\"",
-    "build": "pnpm --filter @mavibase/core build && pnpm --filter @mavibase/database build && pnpm --filter @mavibase/api build && pnpm --filter @mavibase/platform build",
+    "build": "pnpm --filter @mavibase/core build && pnpm --filter @mavibase/database build && pnpm --filter @mavibase/api build && pnpm --filter @mavibase/platform build && pnpm build:console",
     "build:console": "pnpm --filter @mavibase/console build",
     "clean": "pnpm -r exec rimraf dist",
     "start": "pnpm --filter @mavibase/server start",
@@ -19,11 +19,12 @@
     "migrate": "pnpm migrate:platform && pnpm migrate:database"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "@types/node": "^20.10.0",
+    "concurrently": "^9.1.0",
+    "esbuild": "^0.27.3",
+    "rimraf": "^5.0.5",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "@types/node": "^20.10.0",
-    "rimraf": "^5.0.5",
-    "concurrently": "^9.1.0"
+    "typescript": "^5.3.3"
   }
 }

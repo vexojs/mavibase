@@ -33,7 +33,6 @@ COPY scripts ./scripts
 
 # Build everything
 RUN pnpm build
-RUN pnpm build:console
 
 # ---- Stage 2: Runtime (Clean Production Image) ----
 FROM node:20-alpine AS runtime

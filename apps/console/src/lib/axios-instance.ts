@@ -1,4 +1,4 @@
-import axios from "axios"
+import axios, { AxiosInstance } from "axios"
 
 const authUrl = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1/platform`
@@ -8,9 +8,22 @@ const dbUrl = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : "http://localhost:5000/api"
 
+interface AxiosNamespace {
+  get: (url: string, config?: any) => Promise<any>;
+  post: (url: string, data?: any, config?: any) => Promise<any>;
+  put: (url: string, data?: any, config?: any) => Promise<any>;
+  patch: (url: string, data?: any, config?: any) => Promise<any>;
+  delete: (url: string, config?: any) => Promise<any>;
+}
+
+interface ExtendedAxiosInstance extends AxiosInstance {
+  auth: AxiosNamespace;
+  db: AxiosNamespace;
+}
+
 const axiosInstance = axios.create({
   withCredentials: true,
-})
+}) as ExtendedAxiosInstance
 
 // Module-level context store — set by ProjectProvider on mount.
 // This avoids reading localStorage and keeps context in-memory only.

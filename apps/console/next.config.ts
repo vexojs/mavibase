@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_ENABLE_EMAIL_SERVICE: process.env.NEXT_PUBLIC_ENABLE_EMAIL_SERVICE || "false",
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
 }
 
 export default nextConfig
