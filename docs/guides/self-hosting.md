@@ -21,6 +21,10 @@ cd mavibase
 # Or just download the files you need
 curl -O https://raw.githubusercontent.com/mavibase/mavibase/main/docker-compose.yml
 curl -O https://raw.githubusercontent.com/mavibase/mavibase/main/.env.example
+
+# Or pull from GitHub Container Registry
+docker pull ghcr.io/mavibase/mavibase:latest
+
 ```
 
 ### Step 2: Configure
