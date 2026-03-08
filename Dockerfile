@@ -12,8 +12,7 @@ RUN npm install -g pnpm@9
 # Copy all config files needed for build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tsconfig.json ./
-COPY tsconfig.base.json ./
-COPY .npmrc ./
+COPY .npmrc* ./
 
 # Copy package.json for each workspace
 COPY apps/server/package.json ./apps/server/
