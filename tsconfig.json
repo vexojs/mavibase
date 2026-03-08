@@ -22,7 +22,6 @@
     "sourceMap": true,
     "composite": true,
     "forceConsistentCasingInFileNames": false,
-    "suppressImplicitAnyIndexErrors": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": false,
