@@ -9,7 +9,7 @@
     "dev": "pnpm --filter @mavibase/server dev",
     "dev:console": "pnpm --filter @mavibase/console dev",
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:console\"",
-    "build": "pnpm --filter @mavibase/core build && pnpm --filter @mavibase/database build && pnpm --filter @mavibase/api build && pnpm --filter @mavibase/platform build && pnpm build:console",
+    "build": "pnpm --filter @mavibase/core build && pnpm --filter @mavibase/database build && pnpm --filter @mavibase/api build && pnpm --filter @mavibase/platform build && pnpm --filter @mavibase/server build && pnpm build:console",
     "build:console": "pnpm --filter @mavibase/console build",
     "clean": "pnpm -r exec rimraf dist",
     "start": "pnpm --filter @mavibase/server start",
