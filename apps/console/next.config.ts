@@ -6,6 +6,7 @@ import { resolve } from "path"
 config({ path: resolve(__dirname, "../../.env") })
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   reactCompiler: true,
   env: {
     NEXT_PUBLIC_ENABLE_EMAIL_SERVICE: process.env.NEXT_PUBLIC_ENABLE_EMAIL_SERVICE || "false",
