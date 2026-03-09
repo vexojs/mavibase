@@ -67,8 +67,8 @@ COPY --from=builder --chown=mavibase:mavibase /app/packages/platform/dist ./pack
 COPY --from=builder --chown=mavibase:mavibase /app/migrations ./migrations
 COPY --from=builder --chown=mavibase:mavibase /app/scripts ./scripts
 
-# Copy entrypoint
-COPY --chown=mavibase:mavibase docker-entrypoint.sh /docker-entrypoint.sh
+# Copy entrypoint from infra/docker directory
+COPY --chown=mavibase:mavibase infra/docker/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 USER mavibase
