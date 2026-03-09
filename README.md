@@ -303,11 +303,11 @@ pnpm clean             # Remove dist/ artifacts
 | Teams & projects (multi-tenant) | Done |
 | API key management | Done |
 | Web console (Next.js 15) | Done |
+| Self-host Docker image | Done |
 | Realtime subscriptions | Planned |
 | Edge Functions | Planned |
 | File Storage | Planned |
 | SDKs (JS, Python, Flutter) | Planned |
-| Self-host Docker image | Planned |
 
 ---
 
