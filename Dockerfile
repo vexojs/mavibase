@@ -64,7 +64,6 @@ COPY --from=builder /app/packages/platform/package.json ./packages/platform/
 # Copy Next.js standalone build (includes server.js and all dependencies)
 COPY --from=builder --chown=mavibase:mavibase /app/apps/console/.next/standalone ./
 COPY --from=builder --chown=mavibase:mavibase /app/apps/console/.next/static ./apps/console/.next/static
-COPY --from=builder --chown=mavibase:mavibase /app/apps/console/public ./apps/console/public
 COPY --from=builder --chown=mavibase:mavibase /app/apps/server/dist ./apps/server/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/core/dist ./packages/core/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/database/dist ./packages/database/dist
