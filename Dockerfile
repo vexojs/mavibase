@@ -46,14 +46,10 @@ RUN apk add --no-cache postgresql-client redis && \
 RUN addgroup --system --gid 1001 mavibase && \
     adduser --system --uid 1001 mavibase
 
-# Copy node_modules from builder (avoids pnpm symlink issues with scoped packages)
+# Copy node_modules from builder (pnpm hoists deps to root, packages don't have their own node_modules)
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=builder /app/apps/console/node_modules ./apps/console/node_modules
-COPY --from=builder /app/packages/core/node_modules ./packages/core/node_modules
-COPY --from=builder /app/packages/database/node_modules ./packages/database/node_modules
-COPY --from=builder /app/packages/api/node_modules ./packages/api/node_modules
-COPY --from=builder /app/packages/platform/node_modules ./packages/platform/node_modules
 
 # Copy package files (needed for runtime)
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
