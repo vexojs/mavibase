@@ -55,6 +55,11 @@ COPY --from=builder /app/packages/database/package.json ./packages/database/
 COPY --from=builder /app/packages/api/package.json ./packages/api/
 COPY --from=builder /app/packages/platform/package.json ./packages/platform/
 
+# Create workspace directories for pnpm symlinks
+RUN mkdir -p apps/server/node_modules apps/console/node_modules \
+    packages/core/node_modules packages/database/node_modules \
+    packages/api/node_modules packages/platform/node_modules
+
 # Install production dependencies only (no dev deps, much smaller)
 RUN pnpm install --prod --frozen-lockfile
 
