@@ -4,7 +4,7 @@
 # ============================================
 
 # ---- Stage 1: Builder ----
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 
 RUN npm install -g pnpm@9
@@ -35,11 +35,12 @@ COPY scripts ./scripts
 RUN pnpm build
 
 # ---- Stage 2: Runtime (Clean Production Image) ----
-FROM node:20-alpine AS runtime
+FROM node:20-slim AS runtime
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache postgresql-client redis && \
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client redis-tools && \
+    rm -rf /var/lib/apt/lists/* && \
     npm install -g pnpm@9
 
 # Create non-root user
