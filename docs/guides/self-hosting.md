@@ -19,7 +19,7 @@ git clone https://github.com/mavibase/mavibase.git
 cd mavibase
 
 # Or just download the files you need
-curl -O https://raw.githubusercontent.com/mavibase/mavibase/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/mavibase/mavibase/main/infra/docker/docker-compose.yml
 curl -O https://raw.githubusercontent.com/mavibase/mavibase/main/.env.example
 
 # Or pull from GitHub Container Registry
