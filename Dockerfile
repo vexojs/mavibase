@@ -49,8 +49,10 @@ RUN addgroup --system --gid 1001 mavibase && \
 
 # Copy node_modules from builder (pnpm hoists deps to root, packages don't have their own node_modules)
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=builder /app/apps/console/node_modules ./apps/console/node_modules
+
+# Copy native module dependencies needed by server (argon2, bcrypt, etc)
+COPY --from=builder /app/node_modules/@node-rs ./node_modules/@node-rs
 
 # Copy package files (needed for runtime)
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
