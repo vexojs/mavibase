@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "scripts": {
-    "build": "rimraf dist && esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/main.js",
+    "build": "rimraf dist && esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/main.js --external:argon2 --external:bcrypt",
     "dev": "pnpm exec ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/main.ts",
     "start": "node dist/main.js"
   },
