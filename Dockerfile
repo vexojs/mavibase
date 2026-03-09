@@ -60,12 +60,13 @@ RUN pnpm install --prod --frozen-lockfile
 
 # Copy ONLY built files from builder (not source code)
 COPY --from=builder --chown=mavibase:mavibase /app/apps/console/.next ./apps/console/.next
+COPY --from=builder --chown=mavibase:mavibase /app/apps/server/dist ./apps/server/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/core/dist ./packages/core/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/database/dist ./packages/database/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/api/dist ./packages/api/dist
 COPY --from=builder --chown=mavibase:mavibase /app/packages/platform/dist ./packages/platform/dist
 COPY --from=builder --chown=mavibase:mavibase /app/migrations ./migrations
-COPY --from=builder --chown=mavibase:mavibase /app/scripts ./scripts
+COPY --from=builder --chown=mavibase:mavibase /app/scripts/dist ./scripts
 
 # Copy entrypoint from infra/docker directory
 COPY --chown=mavibase:mavibase infra/docker/docker-entrypoint.sh /docker-entrypoint.sh
