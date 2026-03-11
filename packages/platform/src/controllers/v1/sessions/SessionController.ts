@@ -29,6 +29,16 @@ export const revokeSession = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params
 
+    // Prevent revoking your own current session
+    if (sessionId === req.sessionId) {
+      return res.status(400).json({
+        error: {
+          code: "CANNOT_REVOKE_CURRENT_SESSION",
+          message: "Cannot revoke your current session. Use logout instead.",
+        },
+      })
+    }
+
     await sessionService.revokeSession(sessionId, req.userId!)
 
     res.json({

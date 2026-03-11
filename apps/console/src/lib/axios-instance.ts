@@ -122,7 +122,9 @@ const processQueue = (error: any) => {
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const { config, response: { status } = {} } = error
+    const { config, response } = error
+    const status = response?.status
+    const errorCode = response?.data?.error?.code
     const originalRequest = config
 
     const isAuthEndpoint =
@@ -132,6 +134,14 @@ axiosInstance.interceptors.response.use(
       originalRequest.url.includes("/auth/register")
 
     if (isAuthEndpoint) return Promise.reject(error)
+
+    // Handle session revoked or token hijacking - immediate logout
+    const forceLogoutCodes = ["SESSION_REVOKED", "TOKEN_HIJACKING_DETECTED", "INVALID_REFRESH_TOKEN"]
+    if (status === 401 && forceLogoutCodes.includes(errorCode)) {
+      localStorage.removeItem("user")
+      window.location.href = "/login"
+      return Promise.reject(error)
+    }
 
     if (status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
