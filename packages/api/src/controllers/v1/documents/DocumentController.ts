@@ -211,6 +211,14 @@ list = async (req: Request, res: Response, next: NextFunction) => {
     const queries = this.queryParser.parse(req.query.queries as string | undefined)
     this.queryParser.validateOperators(queries)
 
+    // Validate query fields against schema (SQL comment injection prevention)
+    if (collection.schema_id) {
+      const schema = await this.collectionRepository.getSchema(collection.schema_id)
+      if (schema) {
+        this.queryParser.validateFieldsAgainstSchema(queries, schema.definition)
+      }
+    }
+
     const useCursor = !!req.query.cursor
     const cursor = req.query.cursor as string | undefined
 
