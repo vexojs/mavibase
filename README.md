@@ -19,6 +19,10 @@
 
 ---
 
+> English | [Turkce](./README.tr.md)
+
+---
+
 > **Note:** Mavibase is currently in active development. Features and APIs may change. We welcome contributors and early testers.
 
 ---
