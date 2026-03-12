@@ -1,6 +1,9 @@
 import { pool } from "@mavibase/database/config/database"
 import { AppError } from "@mavibase/core"
 
+// Default isolation level for quota operations (READ COMMITTED prevents dirty reads)
+const DEFAULT_ISOLATION_LEVEL = "READ COMMITTED"
+
 export interface DatabaseQuotas {
   max_collections: number
   max_documents_per_collection: number
@@ -307,7 +310,7 @@ export class QuotaManager {
     const client = await pool.connect()
 
     try {
-      await client.query("BEGIN")
+      await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       // Count collections
       const collectionsResult = await client.query(
@@ -481,7 +484,7 @@ async recalculateSizes(databaseId: string): Promise<DatabaseSizeBreakdown> {
     const client = await pool.connect()
 
     try {
-      await client.query("BEGIN")
+      await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       // Calculate actual storage sizes using pg_column_size
       const sizeResult = await client.query(
