@@ -1,5 +1,7 @@
 # CHANGES - HTTPS Enforcement Security Fix
 
+> English | [Turkce](./CHANGES.tr.md)
+
 ## Issue
 **CRITICAL: Missing HTTPS Enforcement**
 
