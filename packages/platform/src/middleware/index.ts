@@ -7,12 +7,16 @@ import { requestLogger } from "./request-logger"
 import { requestId } from "./request-id"
 import cookieParser from "cookie-parser"
 import { attachClientIp } from "./ip-middleware"
+import { httpsEnforcement, securityHeaders, contentSecurityPolicy } from "./security-headers"
 
 /**
  * Unified middleware setup for both platform and database services
  * Handles CORS, security headers, body parsing, and cookies
  */
 export const setupMiddleware = (app: Express) => {
+  // HTTPS enforcement (must be first - redirects HTTP to HTTPS in production)
+  app.use(httpsEnforcement)
+  
   app.use(requestId)
   app.use(attachClientIp)
   app.use(requestLogger)
@@ -31,8 +35,10 @@ export const setupMiddleware = (app: Express) => {
     }),
   )
 
-  // Security headers
+  // Security headers (helmet + custom HSTS/CSP)
   app.use(helmet())
+  app.use(securityHeaders)
+  app.use(contentSecurityPolicy)
 
   // Body parsing middleware
   app.use(express.json({ limit: "10mb" }))
