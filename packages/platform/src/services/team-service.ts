@@ -5,6 +5,7 @@ import { nanoid } from "nanoid"
 import type { PoolClient } from "pg"
 import crypto from "crypto"
 import { sendTeamInviteEmail, sendMemberRemovedEmail, sendRoleChangedEmail } from "./email-service"
+import { withTransaction } from "@mavibase/database/transaction/TransactionManager"
 
 // Default avatar URLs for teams
 const TEAM_AVATAR_URLS = [
@@ -205,36 +206,33 @@ export const updateTeam = async (teamId: string, userId: string, updates: any) =
 }
 
 export const deleteTeam = async (teamId: string, userId: string) => {
-  const client = await pool.connect()
+  // Pre-transaction validation (outside transaction for efficiency)
+  const memberCheck = await pool.query(`SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2`, [
+    teamId,
+    userId,
+  ])
 
-  try {
-    // Verify user is owner
-    const memberCheck = await client.query(`SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2`, [
-      teamId,
-      userId,
-    ])
-
-    if (memberCheck.rows.length === 0 || memberCheck.rows[0].role !== "owner") {
-      throw {
-        statusCode: 403,
-        code: "INSUFFICIENT_PERMISSIONS",
-        message: "Only team owners can delete teams",
-      }
+  if (memberCheck.rows.length === 0 || memberCheck.rows[0].role !== "owner") {
+    throw {
+      statusCode: 403,
+      code: "INSUFFICIENT_PERMISSIONS",
+      message: "Only team owners can delete teams",
     }
+  }
 
-    // Check if it's user's last team
-    const teamsCount = await client.query(`SELECT COUNT(*) as count FROM team_members WHERE user_id = $1`, [userId])
+  // Check if it's user's last team
+  const teamsCount = await pool.query(`SELECT COUNT(*) as count FROM team_members WHERE user_id = $1`, [userId])
 
-    if (Number.parseInt(teamsCount.rows[0].count) <= 1) {
-      throw {
-        statusCode: 400,
-        code: "CANNOT_DELETE_LAST_TEAM",
-        message: "Cannot delete your last team",
-      }
+  if (Number.parseInt(teamsCount.rows[0].count) <= 1) {
+    throw {
+      statusCode: 400,
+      code: "CANNOT_DELETE_LAST_TEAM",
+      message: "Cannot delete your last team",
     }
+  }
 
-    await client.query("BEGIN")
-
+  // Use withTransaction with SERIALIZABLE for audit-critical deletion
+  await withTransaction(pool, async (client) => {
     // Collect all project IDs for this team before deleting it (control-plane DB).
     const projectsResult = await client.query<{ id: string }>(
       `SELECT id FROM projects WHERE team_id = $1`,
@@ -260,14 +258,7 @@ export const deleteTeam = async (teamId: string, userId: string) => {
 
     // Delete team (cascade will handle members and projects in the platform DB).
     await client.query(`DELETE FROM teams WHERE id = $1`, [teamId])
-
-    await client.query("COMMIT")
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    client.release()
-  }
+  }, { auditCritical: true }) // SERIALIZABLE for team deletion
 }
 
 export const getUserTeams = async (userId: string) => {
@@ -432,11 +423,8 @@ export const inviteMember = async (teamId: string, inviterId: string, email: str
 }
 
 export const acceptInvite = async (inviteId: string, userId: string) => {
-  const client = await pool.connect()
-
-  try {
-    await client.query("BEGIN")
-
+  // Use withTransaction with SERIALIZABLE to prevent race conditions on invitation acceptance
+  return await withTransaction(pool, async (client) => {
     // Get the invitation
     const inviteResult = await client.query(
       `SELECT * FROM team_invitations WHERE id = $1 AND status = 'pending' AND expires_at > NOW()`,
@@ -490,15 +478,8 @@ export const acceptInvite = async (inviteId: string, userId: string) => {
       inviteId,
     ])
 
-    await client.query("COMMIT")
-
     return { teamId: invite.team_id }
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    client.release()
-  }
+  }, { isolationLevel: "SERIALIZABLE" }) // SERIALIZABLE to prevent race conditions
 }
 
 export const removeMember = async (teamId: string, requesterId: string, targetUserId: string) => {
