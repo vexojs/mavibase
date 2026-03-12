@@ -8,6 +8,7 @@ import { redis } from "../config/redis"
 import { createPersonalTeam } from "./team-service"
 import { createPersonalProject } from "./project-service"
 import crypto from "crypto"
+import { withTransaction } from "@mavibase/database/transaction/TransactionManager"
 
 // Default avatar URLs for new users
 const AVATAR_URLS = [
@@ -67,11 +68,8 @@ export const registerUser = async (data: {
   const userId = uuidv4()
   const teamName = username || email.split("@")[0]
 
-  const client = await pool.connect()
-
-  try {
-    await client.query("BEGIN")
-
+  // Use withTransaction for explicit isolation level (READ COMMITTED)
+  const { user, personalTeam } = await withTransaction(pool, async (client) => {
     // Create user
     const name = [firstname, lastname].filter(Boolean).join(" ").trim() || teamName
     
@@ -101,46 +99,42 @@ export const registerUser = async (data: {
       [personalTeam.id, userId],
     )
 
-    await client.query("COMMIT")
+    return { user, personalTeam }
+  }, { isolationLevel: "READ COMMITTED" })
+  
+  // Send verification email only if email service is enabled (outside transaction)
+  const emailServiceEnabled = process.env.ENABLE_EMAIL_SERVICE === "true"
+  if (emailServiceEnabled) {
+    await sendVerificationEmail(email, user.id)
+  }
 
-    // Send verification email only if email service is enabled
-    if (emailServiceEnabled) {
-      await sendVerificationEmail(email, user.id)
-    }
+  // Generate tokens
+  const accessToken = generateAccessToken(userId)
+  const refreshToken = generateRefreshToken(userId)
 
-    // Generate tokens
-    const accessToken = generateAccessToken(userId)
-    const refreshToken = generateRefreshToken(userId)
+  const accessTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+  const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
-    const accessTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
-    const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  await createSession({
+    userId,
+    accessToken,
+    refreshToken,
+    ipAddress: ip,
+    userAgent,
+    accessTokenExpiresAt,
+    refreshTokenExpiresAt,
+  })
 
-    await createSession({
-      userId,
-      accessToken,
-      refreshToken,
-      ipAddress: ip,
-      userAgent,
-      accessTokenExpiresAt,
-      refreshTokenExpiresAt,
-    })
-
-    return {
-      user: {
-        ...user,
-        default_team_id: personalTeam.id,
-        selected_team_id: personalTeam.id,
-        selected_project_id: null,
-      },
-      team: personalTeam,
-      accessToken,
-      refreshToken,
-    }
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    client.release()
+  return {
+    user: {
+      ...user,
+      default_team_id: personalTeam.id,
+      selected_team_id: personalTeam.id,
+      selected_project_id: null,
+    },
+    team: personalTeam,
+    accessToken,
+    refreshToken,
   }
 }
 

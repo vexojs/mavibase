@@ -6,6 +6,9 @@ import { logger } from "@mavibase/database/utils/logger"
 import { CursorPaginator } from "@mavibase/database/services/cursor-paginator"
 import type { PoolClient } from "pg"
 
+// Default isolation level for document operations (READ COMMITTED prevents dirty reads)
+const DEFAULT_ISOLATION_LEVEL = "READ COMMITTED"
+
 export class DocumentRepository {
   private cursorPaginator = new CursorPaginator()
   private versioningEnabled = process.env.ENABLE_VERSIONING !== "false"
@@ -49,7 +52,7 @@ export class DocumentRepository {
     const client = tx || (await pool.connect())
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       if (projectId) {
         const collectionCheck = await client.query(
@@ -212,7 +215,7 @@ export class DocumentRepository {
     const client = tx || (await pool.connect())
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       let query = `
         SELECT d.* 
@@ -319,7 +322,7 @@ export class DocumentRepository {
     const errors: Array<{ index: number; error: string; data: any }> = []
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       for (let i = 0; i < documents.length; i++) {
         const doc = documents[i]
@@ -435,7 +438,7 @@ export class DocumentRepository {
     const errors: Array<{ id: string; error: string }> = []
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       for (const update of updates) {
         try {
@@ -519,7 +522,7 @@ export class DocumentRepository {
     const errors: Array<{ id: string; error: string }> = []
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       for (const item of ids) {
         try {
@@ -910,7 +913,7 @@ export class DocumentRepository {
     const client = tx || (await pool.connect())
 
     try {
-      if (!tx) await client.query("BEGIN")
+      if (!tx) await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       let query = `
         SELECT d.* 
