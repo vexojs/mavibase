@@ -2,12 +2,15 @@ import { pool } from "@mavibase/database/config/database"
 import type { Database } from "@mavibase/database/types/database"
 import { AppError } from "@mavibase/core"
 
+// Default isolation level for database operations (READ COMMITTED prevents dirty reads)
+const DEFAULT_ISOLATION_LEVEL = "READ COMMITTED"
+
 export class DatabaseRepository {
 async create(database: Database, projectId: string, teamId: string): Promise<Database> {
     const client = await pool.connect()
 
     try {
-      await client.query("BEGIN")
+      await client.query(`BEGIN ISOLATION LEVEL ${DEFAULT_ISOLATION_LEVEL}`)
 
       // Check if key already exists (globally unique)
       const existingKey = await client.query("SELECT id FROM databases WHERE key = $1 AND deleted_at IS NULL", [
