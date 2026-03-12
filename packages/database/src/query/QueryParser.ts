@@ -1,4 +1,5 @@
 import type { QueryOperator } from "../types/query"
+import type { SchemaDefinition } from "../types/collection"
 import { AppError } from "@mavibase/core"
 
 export class QueryParser {
@@ -6,6 +7,27 @@ export class QueryParser {
   private static readonly MAX_FILTERS = 50
   private static readonly MAX_REGEX_LENGTH = 200
   private static readonly MAX_QUERY_DEPTH = 5
+  
+  /**
+   * SQL comment patterns that could be used for injection attempts.
+   * Even with parameterized queries, these patterns in field names could
+   * indicate malicious intent or cause issues in dynamic query construction.
+   */
+  private static readonly SQL_COMMENT_PATTERNS = [
+    /--/,           // SQL single-line comment
+    /\/\*/,         // SQL block comment start
+    /\*\//,         // SQL block comment end
+    /;/,            // Statement terminator
+    /\\x00/,        // Null byte
+    /'/,            // Single quote (potential escape issues)
+    /"/,            // Double quote (potential escape issues)
+    /`/,            // Backtick (MySQL-style quoting)
+  ]
+  
+  /**
+   * Reserved system field names that cannot be queried directly
+   */
+  private static readonly RESERVED_FIELD_PREFIXES = ['$', '_']
   
   /**
    * Dangerous regex patterns that can cause ReDoS (Regular Expression Denial of Service)
@@ -485,6 +507,102 @@ export class QueryParser {
     const limitOp = operators.find((op) => op.type === "limit")
     if (limitOp && Number(limitOp.value) > maxLimit) {
       throw new AppError(400, "INVALID_QUERY", `Limit cannot exceed ${maxLimit}`)
+    }
+  }
+
+  /**
+   * Validate that a field name is safe and exists in the schema.
+   * Prevents SQL comment injection and enforces schema whitelist.
+   */
+  private static validateFieldName(field: string, schema?: SchemaDefinition): void {
+    if (typeof field !== "string" || field.length === 0) {
+      throw new AppError(400, "INVALID_FIELD", "Field name must be a non-empty string")
+    }
+
+    // Check for SQL injection patterns in field names
+    for (const pattern of QueryParser.SQL_COMMENT_PATTERNS) {
+      if (pattern.test(field)) {
+        throw new AppError(
+          400, 
+          "INVALID_FIELD_NAME", 
+          `Field name '${field}' contains invalid characters`,
+          {
+            hint: "Field names cannot contain SQL comment sequences, quotes, or special characters",
+          }
+        )
+      }
+    }
+
+    // Check for reserved prefixes (system fields start with $ or _)
+    for (const prefix of QueryParser.RESERVED_FIELD_PREFIXES) {
+      if (field.startsWith(prefix)) {
+        throw new AppError(
+          400,
+          "RESERVED_FIELD_NAME",
+          `Field name '${field}' uses a reserved prefix`,
+          {
+            hint: "Field names cannot start with '$' or '_' as these are reserved for system fields",
+          }
+        )
+      }
+    }
+
+    // Validate field length (prevent extremely long field names)
+    if (field.length > 64) {
+      throw new AppError(
+        400,
+        "FIELD_NAME_TOO_LONG",
+        `Field name exceeds maximum length of 64 characters`,
+        {
+          provided: field.length,
+          maximum: 64,
+        }
+      )
+    }
+
+    // If schema is provided, validate that field exists in schema
+    if (schema && schema.fields && schema.fields.length > 0) {
+      const fieldExists = schema.fields.some(f => f.name === field)
+      if (!fieldExists) {
+        throw new AppError(
+          400, 
+          "INVALID_FIELD", 
+          `Field '${field}' not found in collection schema`,
+          {
+            allowedFields: schema.fields.map(f => f.name),
+            hint: "Only fields defined in the collection schema can be queried",
+          }
+        )
+      }
+    }
+  }
+
+  /**
+   * Validate all field names in query operators against the schema.
+   * This should be called after parsing queries when schema is available.
+   */
+  validateFieldsAgainstSchema(operators: QueryOperator[], schema?: SchemaDefinition): void {
+    for (const operator of operators) {
+      this.validateOperatorFields(operator, schema)
+    }
+  }
+
+  /**
+   * Recursively validate fields in an operator and its nested conditions
+   */
+  private validateOperatorFields(operator: QueryOperator, schema?: SchemaDefinition): void {
+    // Skip operators that don't have fields (limit, offset)
+    if ('field' in operator && operator.field) {
+      QueryParser.validateFieldName(operator.field, schema)
+    }
+
+    // Recursively validate nested conditions (and, or, not)
+    if ('conditions' in operator && Array.isArray(operator.conditions)) {
+      for (const condition of operator.conditions) {
+        if (condition) {
+          this.validateOperatorFields(condition, schema)
+        }
+      }
     }
   }
 }
