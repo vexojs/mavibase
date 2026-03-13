@@ -499,3 +499,158 @@ fix(platform): add Redis store for distributed rate limiting
 
 deps: add rate-limit-redis package for distributed rate limiting
 ```
+
+---
+
+# CHANGES - Request Deduplication Fix
+
+## Issue
+**MEDIUM: No Request Deduplication**
+
+Identical rapid requests weren't deduplicated. If a user clicks a button twice, two API calls would go through, potentially causing:
+- Duplicate database entries
+- Double-charging in payment scenarios
+- Race conditions with conflicting updates
+- Wasted server resources processing identical requests
+
+---
+
+## Files Changed
+
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `packages/platform/src/middleware/idempotency.ts` | **Added** | New middleware for request deduplication using Idempotency-Key header |
+| `packages/platform/src/middleware/index.ts` | **Modified** | Integrated idempotency middleware into the middleware chain |
+| `.env.example` | **Modified** | Added idempotency configuration options |
+
+---
+
+## New Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IDEMPOTENCY_ENABLED` | `true` | Enable/disable idempotency checking |
+| `IDEMPOTENCY_TTL` | `3600` | Cache TTL in seconds (default: 1 hour) |
+| `IDEMPOTENCY_KEY_PREFIX` | `idempotency` | Redis key prefix |
+
+---
+
+## Idempotency Features Implemented
+
+1. **UUID Validation** - Idempotency-Key must be a valid UUID v4 format
+2. **Project Scoping** - Keys are scoped per-project to prevent collisions
+3. **In-Flight Protection** - Returns 409 Conflict if same key is being processed
+4. **Response Caching** - Caches successful (2xx) responses for replay
+5. **Header Replay** - Restores original response headers on replay
+6. **Graceful Degradation** - Skips idempotency if Redis unavailable (with warning)
+7. **Backward Compatible** - Requests without Idempotency-Key work normally
+
+---
+
+## How It Works
+
+### First Request
+```
+Client                          Server                         Redis
+  │                                │                              │
+  │─── POST /api/v1/databases ────>│                              │
+  │    Idempotency-Key: abc-123    │                              │
+  │                                │─── SET idempotency:abc-123 ──>│
+  │                                │    status: "processing"       │
+  │                                │                              │
+  │                                │ (process request)            │
+  │                                │                              │
+  │                                │─── SET idempotency:abc-123 ──>│
+  │                                │    status: "completed"        │
+  │                                │    response: {...}            │
+  │<────── 201 Created ────────────│                              │
+```
+
+### Duplicate Request (Replayed)
+```
+Client                          Server                         Redis
+  │                                │                              │
+  │─── POST /api/v1/databases ────>│                              │
+  │    Idempotency-Key: abc-123    │                              │
+  │                                │─── GET idempotency:abc-123 ──>│
+  │                                │<── {status: "completed"} ─────│
+  │                                │                              │
+  │<─ 201 Created (from cache) ────│                              │
+  │   Idempotency-Replayed: true   │                              │
+```
+
+---
+
+## Redis Key Format
+
+```
+idempotency:<project_id>:<idempotency_key>
+```
+
+Example: `idempotency:proj_abc123:550e8400-e29b-41d4-a716-446655440000`
+
+---
+
+## Expected Behavior
+
+### Valid Request with Idempotency-Key
+```bash
+curl -X POST https://api.domain.com/api/v1/databases \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"name": "my-database"}'
+# First call: 201 Created
+# Second call (same key): 201 Created (cached), Idempotency-Replayed: true
+```
+
+### Invalid Idempotency-Key Format
+```bash
+curl -X POST https://api.domain.com/api/v1/databases \
+  -H "Idempotency-Key: not-a-uuid" \
+  -d '{"name": "test"}'
+# Returns: 400 Bad Request
+# {"error": {"code": "INVALID_IDEMPOTENCY_KEY", "message": "Idempotency-Key must be a valid UUID v4"}}
+```
+
+### Concurrent Request with Same Key
+```bash
+# If another request with same key is being processed:
+# Returns: 409 Conflict
+# {"error": {"code": "IDEMPOTENCY_KEY_IN_USE", "message": "A request with this Idempotency-Key is currently being processed"}}
+```
+
+---
+
+## Client Implementation Example
+
+```typescript
+// Generate unique key per operation
+const idempotencyKey = crypto.randomUUID()
+
+const response = await fetch('/api/v1/databases', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Idempotency-Key': idempotencyKey,
+  },
+  body: JSON.stringify({ name: 'my-database' }),
+})
+
+// Check if response was replayed
+if (response.headers.get('Idempotency-Replayed') === 'true') {
+  console.log('Request was deduplicated')
+}
+```
+
+---
+
+## Commit Messages
+
+```
+feat(platform): add idempotency middleware for request deduplication
+
+fix(platform): integrate idempotency middleware into middleware chain
+
+docs: add idempotency configuration to .env.example
+```

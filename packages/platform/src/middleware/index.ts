@@ -9,6 +9,7 @@ import cookieParser from "cookie-parser"
 import { attachClientIp } from "./ip-middleware"
 import { httpsEnforcement, securityHeaders, contentSecurityPolicy } from "./security-headers"
 import { contentTypeValidator } from "./content-type-validator"
+import { idempotencyMiddleware } from "./idempotency"
 
 /**
  * Unified middleware setup for both platform and database services
@@ -59,4 +60,8 @@ export const setupMiddleware = (app: Express) => {
 
   // Rate limiting
   app.use(rateLimiter)
+
+  // Idempotency middleware for request deduplication
+  // Must be after rate limiting to prevent caching rate-limited responses
+  app.use(idempotencyMiddleware)
 }
