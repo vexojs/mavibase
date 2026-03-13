@@ -343,3 +343,159 @@ fix(platform): integrate content-type validator into middleware chain
 
 docs: add Content-Type validation configuration to .env.example
 ```
+
+---
+
+# CHANGES - Distributed Rate Limit Bypass Fix
+
+## Issue
+**MEDIUM: Distributed Rate Limit Bypass**
+
+Rate limiting was using in-memory store instead of Redis, allowing attackers to bypass rate limits by distributing requests across multiple server instances. This vulnerability allowed:
+- Credential stuffing attacks distributed across instances
+- API abuse by sending requests to different backend servers
+- Brute force attacks that reset on server restarts
+
+---
+
+## Files Changed
+
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `packages/api/src/middleware/rate-limiter.ts` | **Modified** | Added RedisStore for distributed rate limiting |
+| `packages/platform/src/middleware/rate-limiter.ts` | **Modified** | Added RedisStore for both general and auth rate limiters |
+| `packages/api/package.json` | **Modified** | Added `rate-limit-redis` dependency |
+| `packages/platform/package.json` | **Modified** | Added `rate-limit-redis` dependency |
+
+---
+
+## Dependencies Added
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| `rate-limit-redis` | `^4.2.0` | Redis store adapter for express-rate-limit |
+
+---
+
+## Security Features Implemented
+
+1. **Redis-backed Rate Limiting** - All rate limit counters stored in Redis, shared across instances
+2. **Production Enforcement** - Application fails to start in production without Redis connection
+3. **Separate Auth Store** - Authentication rate limits use separate Redis prefix to avoid conflicts
+4. **Distributed Counter Sync** - All server instances share the same rate limit state
+5. **Health Check Export** - `isDistributedRateLimiting()` function for monitoring
+
+---
+
+## Rate Limiting Architecture
+
+### Before (Vulnerable)
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Instance 1 │     │  Instance 2 │     │  Instance 3 │
+│  Memory: 50 │     │  Memory: 50 │     │  Memory: 50 │
+└─────────────┘     └─────────────┘     └─────────────┘
+     ↑                    ↑                    ↑
+     └────────────────────┼────────────────────┘
+                    Attacker: 150 requests
+                    (50 per instance = bypass!)
+```
+
+### After (Secure)
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Instance 1 │     │  Instance 2 │     │  Instance 3 │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       └───────────────────┼───────────────────┘
+                           ▼
+                    ┌─────────────┐
+                    │    Redis    │
+                    │  Counter: 150│
+                    └─────────────┘
+                    Rate limit: EXCEEDED!
+```
+
+---
+
+## Redis Key Prefixes
+
+| Prefix | Purpose |
+|--------|---------|
+| `rl:api:` | API rate limits (per-project) |
+| `rl:platform:` | Platform general rate limits |
+| `rl:auth:` | Authentication rate limits (stricter) |
+
+---
+
+## Expected Behavior
+
+### In Development (`NODE_ENV=development`)
+- Rate limiting is **skipped** entirely
+- Redis connection is optional (falls back to memory with warning)
+
+### In Production (`NODE_ENV=production`)
+- Redis is **REQUIRED** - application throws fatal error without it
+- All rate limits are distributed across instances
+- Counters persist across deployments (until TTL expires)
+
+---
+
+## How to Verify
+
+### 1. Check Redis Connection on Startup
+```bash
+# Logs should show:
+# "Redis store initialized for distributed rate limiting"
+```
+
+### 2. Test Rate Limit Persistence
+```bash
+# Send requests to different instances (if load balanced)
+# Rate limit should trigger after the SAME total count
+for i in {1..101}; do
+  curl -s -o /dev/null -w "%{http_code}\n" https://api.domain.com/api/v1/databases
+done
+# 100 requests: 200 OK
+# 101st request: 429 Too Many Requests
+```
+
+### 3. Check Redis Keys
+```bash
+redis-cli KEYS "rl:*"
+# Should show rate limit keys like:
+# rl:api:<project-id>
+# rl:platform:<ip>
+# rl:auth:<ip>
+```
+
+### 4. Health Check
+```typescript
+import { isDistributedRateLimiting } from "./middleware/rate-limiter"
+
+if (!isDistributedRateLimiting()) {
+  logger.warn("Rate limiting is NOT distributed - security risk!")
+}
+```
+
+---
+
+## Error on Missing Redis (Production)
+
+```
+Error: FATAL: Redis is required for rate limiting in production. 
+Without distributed rate limiting, attackers can bypass limits. 
+Set REDIS_URL environment variable or disable rate limiting explicitly.
+```
+
+---
+
+## Commit Messages
+
+```
+fix(api): add Redis store for distributed rate limiting
+
+fix(platform): add Redis store for distributed rate limiting
+
+deps: add rate-limit-redis package for distributed rate limiting
+```
