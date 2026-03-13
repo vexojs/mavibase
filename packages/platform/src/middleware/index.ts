@@ -27,11 +27,17 @@ export const setupMiddleware = (app: Express) => {
     : ["http://localhost:3000"]
   
   // CORS configuration - apply to all routes
+  // maxAge: Browser caches preflight response for 24 hours (reduces OPTIONS requests)
+  const corsMaxAge = parseInt(process.env.CORS_MAX_AGE || "86400", 10)
+  
   app.use(
     cors({
       origin: allowedOrigins,
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Project-Id", "X-Request-Id", "X-API-Key"],
+      exposedHeaders: ["X-Request-Id", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+      maxAge: corsMaxAge, // Preflight cache duration in seconds (default: 24 hours)
     }),
   )
 
