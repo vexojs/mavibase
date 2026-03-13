@@ -654,3 +654,133 @@ fix(platform): integrate idempotency middleware into middleware chain
 
 docs: add idempotency configuration to .env.example
 ```
+
+---
+
+# CHANGES - Request Size Spike Detection Fix
+
+## Issue
+**LOW: No Request Size Spike Detection**
+
+Rate limiting was request-count based only, not bandwidth-based. An attacker could exploit this by sending large payloads:
+- Normal user: 100 requests x 1KB = 100KB total
+- Attacker: 100 requests x 10MB = 1GB total (same request count, 10,000x bandwidth)
+
+This allows resource exhaustion attacks while staying under request count limits.
+
+---
+
+## Files Changed
+
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `packages/platform/src/middleware/bandwidth-limiter.ts` | **Added** | New middleware for bandwidth-based rate limiting and spike detection |
+| `packages/platform/src/middleware/index.ts` | **Modified** | Integrated bandwidth limiter after request-count rate limiter |
+| `.env.example` | **Modified** | Added bandwidth limiting configuration options |
+
+---
+
+## New Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BANDWIDTH_LIMIT_BYTES` | `52428800` (50MB) | Maximum bytes allowed per window |
+| `BANDWIDTH_WINDOW_SECONDS` | `60` | Window size in seconds |
+| `MAX_SINGLE_REQUEST_BYTES` | `10485760` (10MB) | Maximum single request size (spike detection) |
+| `BANDWIDTH_INCLUDE_RESPONSE` | `false` | Include response size in bandwidth calculation |
+| `BANDWIDTH_KEY_PREFIX` | `bw` | Redis key prefix |
+
+---
+
+## Features Implemented
+
+1. **Single Request Spike Detection** - Rejects requests larger than `MAX_SINGLE_REQUEST_BYTES` (works without Redis)
+2. **Bandwidth-Based Rate Limiting** - Tracks total bytes per time window using Redis
+3. **Per-Identity Tracking** - Tracks by Project ID > User ID > IP Address (in priority order)
+4. **Response Headers** - Exposes `X-Bandwidth-Limit`, `X-Bandwidth-Used`, `X-Bandwidth-Remaining`
+5. **Optional Response Tracking** - Can include response size in bandwidth calculation
+6. **Strict Limiter Variant** - `strictBandwidthLimiter` for sensitive endpoints (1MB/request, 10MB/window)
+
+---
+
+## Two-Layer Protection
+
+### Layer 1: Single Request Spike (No Redis Required)
+```
+Request 10MB body → 413 REQUEST_TOO_LARGE (blocked immediately)
+```
+
+### Layer 2: Cumulative Bandwidth (Requires Redis)
+```
+Request 1: 5MB  → 200 OK (5MB used)
+Request 2: 5MB  → 200 OK (10MB used)
+...
+Request 11: 5MB → 429 BANDWIDTH_LIMIT_EXCEEDED (55MB > 50MB limit)
+```
+
+---
+
+## Expected Behavior
+
+### Single Request Too Large
+```bash
+curl -X POST https://api.domain.com/api/v1/databases \
+  -H "Content-Type: application/json" \
+  -d @large-15mb-file.json
+# Returns: 413 Payload Too Large
+# {
+#   "error": {
+#     "code": "REQUEST_TOO_LARGE",
+#     "message": "Request body exceeds maximum allowed size of 10MB",
+#     "received": "15MB",
+#     "limit": "10MB"
+#   }
+# }
+```
+
+### Bandwidth Limit Exceeded
+```bash
+# After sending 50MB+ in the current window:
+# Returns: 429 Too Many Requests
+# {
+#   "error": {
+#     "code": "BANDWIDTH_LIMIT_EXCEEDED",
+#     "message": "Bandwidth limit of 50MB per 60 seconds exceeded",
+#     "used": "52.5MB",
+#     "limit": "50MB",
+#     "retryAfter": 45
+#   }
+# }
+```
+
+### Response Headers
+```
+X-Bandwidth-Limit: 52428800
+X-Bandwidth-Used: 10485760
+X-Bandwidth-Remaining: 41943040
+```
+
+---
+
+## Redis Key Format
+
+```
+bw:<identifier>:<window_timestamp>
+```
+
+Examples:
+- `bw:proj:proj_abc123:1710345600` - Project-scoped
+- `bw:user:user_xyz789:1710345600` - User-scoped
+- `bw:ip:192.168.1.1:1710345600` - IP-scoped (fallback)
+
+---
+
+## Commit Messages
+
+```
+feat(platform): add bandwidth-based rate limiting middleware
+
+fix(platform): integrate bandwidth limiter into middleware chain
+
+docs: add bandwidth limiting configuration to .env.example
+```
