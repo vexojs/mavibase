@@ -8,6 +8,7 @@ import { requestId } from "./request-id"
 import cookieParser from "cookie-parser"
 import { attachClientIp } from "./ip-middleware"
 import { httpsEnforcement, securityHeaders, contentSecurityPolicy } from "./security-headers"
+import { contentTypeValidator } from "./content-type-validator"
 
 /**
  * Unified middleware setup for both platform and database services
@@ -45,6 +46,9 @@ export const setupMiddleware = (app: Express) => {
   app.use(helmet())
   app.use(securityHeaders)
   app.use(contentSecurityPolicy)
+
+  // Content-Type validation (before body parsing to reject invalid types early)
+  app.use(contentTypeValidator)
 
   // Body parsing middleware
   app.use(express.json({ limit: "10mb" }))
