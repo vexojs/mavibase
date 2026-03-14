@@ -65,7 +65,7 @@ export const rateLimiter = rateLimit({
   legacyHeaders: false,
   // Use Redis store for distributed rate limiting (required in production)
   store: redisStore ?? undefined,
-  skip: (req) => process.env.NODE_ENV === "development",
+  skip: (req) => false, // Don't skip - we want headers in all environments
   handler: (req: Request, res: Response) => {
     logger.warn("Rate limit exceeded", { 
       ip: req.ip, 
@@ -101,7 +101,7 @@ export const authRateLimiter = rateLimit({
   windowMs: lockoutDuration * 60 * 1000,
   max: maxLoginAttempts,
   skipSuccessfulRequests: true,
-  skip: (req) => process.env.NODE_ENV === "development",
+  skip: (req) => false, // Don't skip - we want headers in all environments
   // Use Redis store for distributed rate limiting (required in production)
   store: authRedisStore ?? undefined,
   message: {
