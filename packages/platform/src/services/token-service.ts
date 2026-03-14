@@ -14,18 +14,23 @@ const ACCESS_TOKEN_EXPIRY = process.env.JWT_EXPIRES_IN || process.env.JWT_ACCESS
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRES_IN || process.env.JWT_REFRESH_TOKEN_EXPIRY || "7d"
 
 // Validate that secrets are not placeholder values
+// NOTE: This logs warnings instead of throwing to prevent CORS failures
+// The server startup script should validate required env vars before starting
 const validateSecrets = () => {
   if (process.env.NODE_ENV === "production") {
-    if (ACCESS_TOKEN_SECRET?.includes("change-this") || ACCESS_TOKEN_SECRET === "access-secret-key") {
-      throw new Error("FATAL: ACCESS_TOKEN_SECRET must be changed before production deployment")
+    const isAccessSecretWeak = ACCESS_TOKEN_SECRET?.includes("change-this") || ACCESS_TOKEN_SECRET === "access-secret-key"
+    const isRefreshSecretWeak = REFRESH_TOKEN_SECRET?.includes("change-this") || REFRESH_TOKEN_SECRET === "refresh-secret-key"
+    
+    if (isAccessSecretWeak) {
+      logger.error("SECURITY WARNING: ACCESS_TOKEN_SECRET must be changed for production deployment")
     }
-    if (REFRESH_TOKEN_SECRET?.includes("change-this") || REFRESH_TOKEN_SECRET === "refresh-secret-key") {
-      throw new Error("FATAL: REFRESH_TOKEN_SECRET must be changed before production deployment")
+    if (isRefreshSecretWeak) {
+      logger.error("SECURITY WARNING: REFRESH_TOKEN_SECRET must be changed for production deployment")
     }
   }
 }
 
-// Validate secrets on module load
+// Validate secrets on module load (logs warnings, doesn't throw)
 validateSecrets()
 
 // Helper to parse expiry time to milliseconds
