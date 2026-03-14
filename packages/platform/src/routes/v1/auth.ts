@@ -30,5 +30,6 @@ router.post("/password-reset/confirm", authRateLimiter, resetPassword)
 
 // Token Refresh
 router.post("/refresh-token", refreshToken)
-router.get("/verify-token", verifyToken) // support both endpoints
+router.get("/verify-token", verifyToken)
+
 export default router

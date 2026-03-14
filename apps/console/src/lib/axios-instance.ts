@@ -107,6 +107,20 @@ axiosInstance.db = {
   delete: (url: string, config?: any) => axiosInstance.delete(`${dbUrl}${url}`, withContext(config)),
 }
 
+// Request interceptor - fix headers for GET requests
+// Removes Content-Type for GET/HEAD/OPTIONS requests to prevent CORS preflight issues
+axiosInstance.interceptors.request.use(
+  (config) => {
+    if (config.method && ["get", "head", "options"].includes(config.method.toLowerCase())) {
+      if (config.headers) {
+        delete config.headers["Content-Type"]
+      }
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 // 401 interceptor with token refresh + queue
 let isRefreshing = false
 let failedQueue: { resolve: (v: any) => void; reject: (e: any) => void }[] = []

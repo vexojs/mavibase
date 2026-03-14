@@ -295,6 +295,13 @@ export const verifyToken = async (req: Request, res: Response) => {
     if (accessToken) {
       try {
         const decoded = await tokenService.verifyAccessToken(accessToken)
+        
+        // Check if token verification returned null (invalid/blacklisted token)
+        if (!decoded || !decoded.userId) {
+          // Fall through to refresh logic below
+          throw new Error("Invalid access token")
+        }
+        
         const user = await authService.getUserById(decoded.userId)
 
         if (!user) {
@@ -338,6 +345,18 @@ export const verifyToken = async (req: Request, res: Response) => {
 
       // Get user data with the refreshed token
       const decoded = await tokenService.verifyAccessToken(result.accessToken)
+      
+      // Verify the freshly generated token is valid
+      if (!decoded || !decoded.userId) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: "TOKEN_GENERATION_FAILED",
+            message: "Failed to generate valid access token",
+          },
+        })
+      }
+      
       const user = await authService.getUserById(decoded.userId)
 
       return res.json({

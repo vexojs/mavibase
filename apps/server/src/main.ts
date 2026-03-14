@@ -114,9 +114,42 @@ app.use((req, res) => {
 // Error handlers
 app.use(platformErrorHandler);
 
+// Validate required environment variables at startup
+function validateEnvironment() {
+  const isProduction = process.env.NODE_ENV === "production";
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  
+  // Check JWT secrets in production
+  if (isProduction) {
+    const accessSecret = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET;
+    const refreshSecret = process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET;
+    
+    if (!accessSecret || accessSecret.includes("change-this") || accessSecret === "access-secret-key") {
+      errors.push("ACCESS_TOKEN_SECRET must be set to a strong secret in production");
+    }
+    if (!refreshSecret || refreshSecret.includes("change-this") || refreshSecret === "refresh-secret-key") {
+      errors.push("REFRESH_TOKEN_SECRET must be set to a strong secret in production");
+    }
+  }
+  
+  // Log warnings
+  warnings.forEach(w => logger.warn(`ENV WARNING: ${w}`));
+  
+  // Log errors and exit if critical
+  if (errors.length > 0) {
+    errors.forEach(e => logger.error(`ENV ERROR: ${e}`));
+    logger.error("Server cannot start due to missing/invalid environment variables");
+    process.exit(1);
+  }
+}
+
 // Start server
 async function startServer() {
   try {
+    // Validate environment before starting
+    validateEnvironment();
+    
     // Test platform database connection
     const platformDbConnected = await testPlatformConnection();
     if (!platformDbConnected) {
