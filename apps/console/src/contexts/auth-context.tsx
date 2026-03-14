@@ -47,27 +47,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [])
 
   const verifyAuthentication = async () => {
-    console.log("[v0] verifyAuthentication called")
     try {
-      // Debug: Try native fetch first to see if it's an axios issue
-      console.log("[v0] Testing with native fetch first...")
-      try {
-        const fetchRes = await fetch("http://localhost:5000/api/v1/platform/auth/verify-token", {
-          method: "GET",
-          credentials: "include",
-        })
-        console.log("[v0] Native fetch response status:", fetchRes.status)
-        const fetchData = await fetchRes.json()
-        console.log("[v0] Native fetch response data:", fetchData)
-      } catch (fetchErr: any) {
-        console.log("[v0] Native fetch error:", fetchErr.message)
-      }
-      
-      console.log("[v0] Making GET request to /auth/verify-token via axios")
       const res = await axiosInstance.auth.get("/auth/verify-token", {
         withCredentials: true,
       })
-      console.log("[v0] verify-token response:", res.data)
 
       if (res.data.success && res.data.data?.user) {
         const freshUser = res.data.data.user
@@ -79,7 +62,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return null
       }
     } catch (err: any) {
-      console.log("[v0] verify-token error:", err.message, err.response?.status, err.code)
       if (err.response?.status === 401) {
         try {
           await axiosInstance.auth.post("/auth/refresh-token")

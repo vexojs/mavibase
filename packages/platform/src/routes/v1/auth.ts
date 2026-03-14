@@ -13,8 +13,6 @@ import {
 import { authRateLimiter } from "../../middleware/rate-limiter"
 import { requireAuth } from "../../middleware/auth-middleware"
 
-console.log("[v0] Auth routes module loaded")
-
 const router = Router()
 
 // Registration & Login
@@ -32,12 +30,6 @@ router.post("/password-reset/confirm", authRateLimiter, resetPassword)
 
 // Token Refresh
 router.post("/refresh-token", refreshToken)
-
-// Debug middleware for verify-token specifically
-router.get("/verify-token", (req, res, next) => {
-  console.log("[v0] /verify-token route hit")
-  console.log("[v0] Request headers:", req.headers)
-  next()
-}, verifyToken)
+router.get("/verify-token", verifyToken)
 
 export default router

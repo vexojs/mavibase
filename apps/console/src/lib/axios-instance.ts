@@ -8,11 +8,6 @@ const dbUrl = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : "http://localhost:5000/api"
 
-// Debug logging for URL configuration
-console.log("[v0] axios-instance NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL)
-console.log("[v0] axios-instance authUrl:", authUrl)
-console.log("[v0] axios-instance dbUrl:", dbUrl)
-
 interface AxiosNamespace {
   get: (url: string, config?: any) => Promise<any>;
   post: (url: string, data?: any, config?: any) => Promise<any>;
@@ -47,18 +42,15 @@ export function clearRequestContext() {
 
 // Auth namespace — platform API, includes X-Team-Id and X-Project-Id when available
 axiosInstance.auth = {
-  get: (url: string, config?: any) => {
-    const fullUrl = `${authUrl}${url}`
-    console.log("[v0] auth.get called with url:", url, "fullUrl:", fullUrl)
-    return axiosInstance.get(fullUrl, {
+  get: (url: string, config?: any) =>
+    axiosInstance.get(`${authUrl}${url}`, {
       ...config,
       headers: {
         ...config?.headers,
         ...(_teamId && { "X-Team-Id": _teamId }),
         ...(_projectId && { "X-Project-Id": _projectId }),
       },
-    })
-  },
+    }),
   post: (url: string, data?: any, config?: any) =>
     axiosInstance.post(`${authUrl}${url}`, data, {
       ...config,
@@ -115,25 +107,18 @@ axiosInstance.db = {
   delete: (url: string, config?: any) => axiosInstance.delete(`${dbUrl}${url}`, withContext(config)),
 }
 
-// Request interceptor - debug all outgoing requests and fix headers
+// Request interceptor - fix headers for GET requests
+// Removes Content-Type for GET/HEAD/OPTIONS requests to prevent CORS preflight issues
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Remove Content-Type for GET/HEAD/OPTIONS requests (they shouldn't have it)
-    // This prevents axios from sending Content-Type: undefined which can cause CORS issues
     if (config.method && ["get", "head", "options"].includes(config.method.toLowerCase())) {
       if (config.headers) {
         delete config.headers["Content-Type"]
       }
     }
-    
-    console.log("[v0] Axios request interceptor - sending request:", config.method?.toUpperCase(), config.url)
-    console.log("[v0] Request headers:", config.headers)
     return config
   },
-  (error) => {
-    console.log("[v0] Axios request interceptor - request error:", error)
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
 // 401 interceptor with token refresh + queue
