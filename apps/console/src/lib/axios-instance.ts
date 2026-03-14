@@ -115,9 +115,17 @@ axiosInstance.db = {
   delete: (url: string, config?: any) => axiosInstance.delete(`${dbUrl}${url}`, withContext(config)),
 }
 
-// Request interceptor - debug all outgoing requests
+// Request interceptor - debug all outgoing requests and fix headers
 axiosInstance.interceptors.request.use(
   (config) => {
+    // Remove Content-Type for GET/HEAD/OPTIONS requests (they shouldn't have it)
+    // This prevents axios from sending Content-Type: undefined which can cause CORS issues
+    if (config.method && ["get", "head", "options"].includes(config.method.toLowerCase())) {
+      if (config.headers) {
+        delete config.headers["Content-Type"]
+      }
+    }
+    
     console.log("[v0] Axios request interceptor - sending request:", config.method?.toUpperCase(), config.url)
     console.log("[v0] Request headers:", config.headers)
     return config
