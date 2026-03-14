@@ -64,18 +64,31 @@ export const generateRefreshToken = (userId: string): string => {
 
 export const verifyAccessToken = async (token: string): Promise<any> => {
   try {
-    // Check if token is blacklisted (using hash to match how revokeSession blacklists)
-    const tokenHash = hashToken(token)
-    const blacklisted = await redis.get(`blacklist:${tokenHash}`)
-    if (blacklisted) {
-      return null
-    }
-
+    // First verify the JWT signature and expiry (doesn't require Redis)
     const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET) as jwt.JwtPayload
     
     // Verify exp claim is in future (defense against clock skew attacks)
     if (decoded.exp && decoded.exp * 1000 < Date.now()) {
       return null
+    }
+
+    // Check if token is blacklisted (using hash to match how revokeSession blacklists)
+    // Only check if Redis is connected - if Redis is down, skip blacklist check
+    // This is a tradeoff: availability over strict security when Redis is unavailable
+    try {
+      if (redis.isOpen) {
+        const tokenHash = hashToken(token)
+        const blacklisted = await redis.get(`blacklist:${tokenHash}`)
+        if (blacklisted) {
+          logger.warn("Attempted use of blacklisted token", { userId: decoded.userId })
+          return null
+        }
+      } else {
+        logger.warn("Redis unavailable - skipping token blacklist check")
+      }
+    } catch (redisError) {
+      // Log but don't fail - allow request to proceed without blacklist check
+      logger.error("Redis error during blacklist check", redisError)
     }
     
     return decoded

@@ -13,6 +13,8 @@ import {
 import { authRateLimiter } from "../../middleware/rate-limiter"
 import { requireAuth } from "../../middleware/auth-middleware"
 
+console.log("[v0] Auth routes module loaded")
+
 const router = Router()
 
 // Registration & Login
