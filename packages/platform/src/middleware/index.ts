@@ -41,13 +41,22 @@ export const setupMiddleware = (app: Express) => {
       allowedHeaders: ["Content-Type", "Authorization", "X-Project-Id", "X-Request-Id", "X-API-Key", "X-Team-Id", "Idempotency-Key"],
       exposedHeaders: [
         "X-Request-Id", 
+        // Rate limit headers (both legacy X- prefix and modern standard)
         "X-RateLimit-Limit", 
         "X-RateLimit-Remaining", 
         "X-RateLimit-Reset",
+        "RateLimit-Limit",
+        "RateLimit-Remaining", 
+        "RateLimit-Reset",
+        "RateLimit-Policy",
+        // Security headers
         "Strict-Transport-Security",
         "X-Frame-Options",
         "X-Content-Type-Options",
-        "Idempotency-Replayed"
+        // Idempotency
+        "Idempotency-Replayed",
+        // CORS
+        "Access-Control-Max-Age"
       ],
       maxAge: corsMaxAge, // Preflight cache duration in seconds (default: 24 hours)
     }),

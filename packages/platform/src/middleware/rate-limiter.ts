@@ -64,8 +64,8 @@ export const rateLimiter = rateLimit({
       message: "Too many requests from this IP, please try again later",
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true,  // Sends RateLimit-* headers (modern standard)
+  legacyHeaders: true,   // Also sends X-RateLimit-* headers (for compatibility)
   // Use Redis store for distributed rate limiting (required in production)
   store: redisStore ?? undefined,
   // Don't skip - we need headers in all environments. Dev uses 1M limit instead.
