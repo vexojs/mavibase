@@ -1,19 +1,237 @@
 # Testing Guide: v0.1.4-alpha.1 Security Hardening Patch
 
-Quick tests for each security feature using **Postman** or **Browser Console (fetch)**.
+Quick tests for each security feature using **Browser Console (F12)** or **Postman**.
 
 ---
 
-## Prerequisites
+## QUICK START - Full Production Test Script (F12 Console)
 
-Ensure the server is running on `http://localhost:5000`
+Copy and paste this entire script into your browser console (F12):
+
+```javascript
+// ================================================
+// v0.1.4-alpha.1 PRODUCTION Security Test Suite
+// ================================================
+// Run this in F12 console on your dashboard (localhost:3000)
+
+async function runProductionSecurityTest() {
+  const BASE_URL = 'http://localhost:5000';
+  const results = [];
+  
+  console.log('');
+  console.log('================================================');
+  console.log('   v0.1.4-alpha.1 PRODUCTION Security Test');
+  console.log('================================================');
+  console.log('   Target:', BASE_URL);
+  console.log('   Time:', new Date().toISOString());
+  console.log('================================================\n');
+
+  // ----------------------------------------
+  // Test 1: Security Headers
+  // ----------------------------------------
+  console.log('1. Testing Security Headers...');
+  try {
+    const res = await fetch(`${BASE_URL}/health`);
+    const hsts = res.headers.get('Strict-Transport-Security');
+    const xframe = res.headers.get('X-Frame-Options');
+    const xcontent = res.headers.get('X-Content-Type-Options');
+    const xss = res.headers.get('X-XSS-Protection');
+    
+    const pass = !!hsts && !!xframe && !!xcontent;
+    results.push({ test: 'Security Headers', pass, details: { hsts, xframe, xcontent, xss } });
+    
+    console.log('   Strict-Transport-Security:', hsts || 'MISSING');
+    console.log('   X-Frame-Options:', xframe || 'MISSING');
+    console.log('   X-Content-Type-Options:', xcontent || 'MISSING');
+    console.log('   X-XSS-Protection:', xss || 'MISSING');
+    console.log('   Result:', pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Security Headers', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Test 2: Content-Type Validation
+  // ----------------------------------------
+  console.log('\n2. Testing Content-Type Validation...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'POST',
+      body: '{"name":"test"}'
+      // No Content-Type header - should return 415
+    });
+    const pass = res.status === 415;
+    results.push({ test: 'Content-Type Validation', pass, status: res.status });
+    
+    console.log('   Status:', res.status, res.statusText);
+    console.log('   Expected: 415 Unsupported Media Type');
+    console.log('   Result:', pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Content-Type Validation', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Test 3: Rate Limit Headers
+  // ----------------------------------------
+  console.log('\n3. Testing Rate Limit Headers...');
+  try {
+    const res = await fetch(`${BASE_URL}/health`);
+    const limit = res.headers.get('X-RateLimit-Limit');
+    const remaining = res.headers.get('X-RateLimit-Remaining');
+    const reset = res.headers.get('X-RateLimit-Reset');
+    
+    const pass = !!limit && !!remaining;
+    results.push({ test: 'Rate Limit Headers', pass, details: { limit, remaining, reset } });
+    
+    console.log('   X-RateLimit-Limit:', limit || 'MISSING');
+    console.log('   X-RateLimit-Remaining:', remaining || 'MISSING');
+    console.log('   X-RateLimit-Reset:', reset || 'MISSING');
+    console.log('   Production Limit Expected: 1000');
+    console.log('   Result:', pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Rate Limit Headers', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Test 4: CORS Preflight Caching
+  // ----------------------------------------
+  console.log('\n4. Testing CORS Preflight Caching...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': 'http://localhost:3000',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'Content-Type'
+      }
+    });
+    const maxAge = res.headers.get('Access-Control-Max-Age');
+    const pass = maxAge === '86400';
+    results.push({ test: 'CORS Preflight Cache', pass, maxAge });
+    
+    console.log('   Access-Control-Max-Age:', maxAge || 'MISSING');
+    console.log('   Expected: 86400 (24 hours)');
+    console.log('   Result:', pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'CORS Preflight Cache', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Test 5: Idempotency-Key Support
+  // ----------------------------------------
+  console.log('\n5. Testing Idempotency-Key Support...');
+  try {
+    const idempotencyKey = 'test-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    
+    // First request
+    const res1 = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey
+      },
+      body: JSON.stringify({ name: 'idempotency-test' })
+    });
+    const replayed1 = res1.headers.get('Idempotency-Replayed');
+    
+    // Second request with same key
+    const res2 = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey
+      },
+      body: JSON.stringify({ name: 'idempotency-test' })
+    });
+    const replayed2 = res2.headers.get('Idempotency-Replayed');
+    
+    const pass = replayed2 === 'true';
+    results.push({ test: 'Idempotency-Key', pass, details: { firstReplayed: replayed1, secondReplayed: replayed2 } });
+    
+    console.log('   Idempotency-Key:', idempotencyKey);
+    console.log('   First Request - Replayed:', replayed1 || 'false/null');
+    console.log('   Second Request - Replayed:', replayed2 || 'false/null');
+    console.log('   Expected Second: true');
+    console.log('   Result:', pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Idempotency-Key', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Test 6: Production Rate Limit Value
+  // ----------------------------------------
+  console.log('\n6. Testing Production Rate Limit Value...');
+  try {
+    const res = await fetch(`${BASE_URL}/health`);
+    const limit = res.headers.get('X-RateLimit-Limit');
+    const isProduction = limit === '1000';
+    const isDevelopment = limit === '1000000';
+    
+    results.push({ 
+      test: 'Production Rate Limit', 
+      pass: isProduction, 
+      details: { limit, mode: isProduction ? 'PRODUCTION' : (isDevelopment ? 'DEVELOPMENT' : 'UNKNOWN') } 
+    });
+    
+    console.log('   X-RateLimit-Limit:', limit);
+    console.log('   Mode:', isProduction ? 'PRODUCTION (1000)' : (isDevelopment ? 'DEVELOPMENT (1000000)' : 'UNKNOWN'));
+    console.log('   Result:', isProduction ? 'PASS' : 'FAIL (not in production mode)');
+  } catch (e) {
+    results.push({ test: 'Production Rate Limit', pass: false, error: e.message });
+    console.log('   Error:', e.message);
+  }
+
+  // ----------------------------------------
+  // Summary
+  // ----------------------------------------
+  console.log('\n================================================');
+  console.log('   TEST SUMMARY');
+  console.log('================================================');
+  
+  const passed = results.filter(r => r.pass).length;
+  const total = results.length;
+  const allPassed = passed === total;
+  
+  console.log(`   ${passed}/${total} tests passed\n`);
+  
+  results.forEach(r => {
+    const status = r.pass ? 'PASS' : 'FAIL';
+    console.log(`   ${status} - ${r.test}`);
+  });
+  
+  console.log('\n================================================');
+  if (allPassed) {
+    console.log('   ALL TESTS PASSED - Ready for production!');
+  } else {
+    console.log('   SOME TESTS FAILED - Check results above');
+  }
+  console.log('================================================\n');
+
+  return { passed, total, allPassed, results };
+}
+
+// Run the test
+runProductionSecurityTest();
+```
+
+---
+
+## Production .env File
+
+Use `.env.production` or copy these settings:
 
 ```env
-# Set these in your .env for testing (development mode)
-NODE_ENV=development
-ENFORCE_HTTPS=false
+NODE_ENV=production
+RATE_LIMIT_MAX_REQUESTS=1000
+ENABLE_SECURITY_HEADERS=true
+ENFORCE_HTTPS=true
 CONTENT_TYPE_VALIDATION=true
 IDEMPOTENCY_ENABLED=true
+IDEMPOTENCY_TTL=3600
 BANDWIDTH_LIMIT_BYTES=52428800
 MAX_SINGLE_REQUEST_BYTES=10485760
 ```
