@@ -30,5 +30,12 @@ router.post("/password-reset/confirm", authRateLimiter, resetPassword)
 
 // Token Refresh
 router.post("/refresh-token", refreshToken)
-router.get("/verify-token", verifyToken) // support both endpoints
+
+// Debug middleware for verify-token specifically
+router.get("/verify-token", (req, res, next) => {
+  console.log("[v0] /verify-token route hit")
+  console.log("[v0] Request headers:", req.headers)
+  next()
+}, verifyToken)
+
 export default router

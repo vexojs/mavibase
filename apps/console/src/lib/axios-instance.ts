@@ -115,6 +115,19 @@ axiosInstance.db = {
   delete: (url: string, config?: any) => axiosInstance.delete(`${dbUrl}${url}`, withContext(config)),
 }
 
+// Request interceptor - debug all outgoing requests
+axiosInstance.interceptors.request.use(
+  (config) => {
+    console.log("[v0] Axios request interceptor - sending request:", config.method?.toUpperCase(), config.url)
+    console.log("[v0] Request headers:", config.headers)
+    return config
+  },
+  (error) => {
+    console.log("[v0] Axios request interceptor - request error:", error)
+    return Promise.reject(error)
+  }
+)
+
 // 401 interceptor with token refresh + queue
 let isRefreshing = false
 let failedQueue: { resolve: (v: any) => void; reject: (e: any) => void }[] = []
