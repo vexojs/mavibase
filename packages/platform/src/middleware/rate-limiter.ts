@@ -35,15 +35,16 @@ try {
   
   logger.info("Redis store initialized for distributed rate limiting (platform)")
 } catch (error: any) {
-  logger.warn("Redis not available for rate limiting", { error: error.message })
+  logger.warn("Redis not available for rate limiting - using in-memory store", { error: error.message })
   
-  // SECURITY: In production, Redis is REQUIRED for distributed rate limiting
+  // SECURITY WARNING: In production, Redis SHOULD be used for distributed rate limiting
   // Without it, attackers can bypass rate limits by distributing requests across instances
+  // However, we allow the server to start with a warning rather than crashing
   if (isProduction) {
-    throw new Error(
-      "FATAL: Redis is required for rate limiting in production. " +
-      "Without distributed rate limiting, attackers can bypass limits. " +
-      "Set REDIS_URL environment variable or disable rate limiting explicitly."
+    logger.error(
+      "SECURITY WARNING: Redis is not available for rate limiting in production. " +
+      "Using in-memory store which can be bypassed in multi-instance deployments. " +
+      "Set REDIS_URL environment variable for proper distributed rate limiting."
     )
   }
 }
