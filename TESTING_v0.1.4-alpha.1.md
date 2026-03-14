@@ -1,6 +1,6 @@
 # Testing Guide: v0.1.4-alpha.1 Security Hardening Patch
 
-Quick tests for each security feature. Use **curl** from terminal or **Postman** for API testing.
+Quick tests for each security feature using **Postman** or **Browser Console (fetch)**.
 
 ---
 
@@ -8,10 +8,10 @@ Quick tests for each security feature. Use **curl** from terminal or **Postman**
 
 Ensure the server is running on `http://localhost:5000`
 
-```bash
+```env
 # Set these in your .env for testing (development mode)
 NODE_ENV=development
-ENFORCE_HTTPS=false  # Keep false in development to test HTTP
+ENFORCE_HTTPS=false
 CONTENT_TYPE_VALIDATION=true
 IDEMPOTENCY_ENABLED=true
 BANDWIDTH_LIMIT_BYTES=52428800
@@ -20,431 +20,445 @@ MAX_SINGLE_REQUEST_BYTES=10485760
 
 ---
 
-## 1. HTTPS Enforcement (Production Only)
+## 1. Security Headers Validation
 
-**What it does:** Redirects HTTP requests to HTTPS in production, includes HSTS headers.
+**What it does:** Adds HSTS, CSP, X-Frame-Options, and other security headers to all responses.
 
-### Test: Check HSTS Headers (even in dev)
-```bash
-curl -i http://localhost:5000/health
+### Postman:
+1. **Method:** `GET`
+2. **URL:** `http://localhost:5000/health`
+3. Click **Send**
+4. Go to **Headers** tab in response
+5. Look for these headers:
+   - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+   - `X-Content-Type-Options: nosniff`
+   - `X-Frame-Options: DENY`
+   - `X-XSS-Protection: 1; mode=block`
+
+### Browser Console:
+```javascript
+// Open browser console (F12) and paste this:
+fetch('http://localhost:5000/health')
+  .then(response => {
+    console.log('=== Security Headers ===');
+    console.log('Strict-Transport-Security:', response.headers.get('Strict-Transport-Security'));
+    console.log('X-Content-Type-Options:', response.headers.get('X-Content-Type-Options'));
+    console.log('X-Frame-Options:', response.headers.get('X-Frame-Options'));
+    console.log('X-XSS-Protection:', response.headers.get('X-XSS-Protection'));
+    console.log('Referrer-Policy:', response.headers.get('Referrer-Policy'));
+    return response.json();
+  })
+  .then(data => console.log('Response:', data));
 ```
 
-**Expected Response Headers:**
-```
-Strict-Transport-Security: max-age=31536000; includeSubDomains
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 1; mode=block
-```
-
-### Postman Test:
-1. **URL:** `GET http://localhost:5000/health`
-2. **Headers Tab** → Check response headers for security headers
+**Expected:** All security headers present in the response.
 
 ---
 
-## 2. Security Headers Validation
+## 2. Content-Type Validation
 
-**What it does:** Adds comprehensive security headers to all responses.
+**What it does:** Rejects POST/PUT/PATCH/DELETE requests without valid `Content-Type` header.
 
-### Test: Verify All Security Headers
-```bash
-curl -i http://localhost:5000/health | grep -E "Strict-Transport-Security|X-Content-Type|X-Frame-Options|Referrer-Policy|Permissions-Policy"
+### Test 1: WITHOUT Content-Type (Should Fail - 415)
+
+#### Postman:
+1. **Method:** `POST`
+2. **URL:** `http://localhost:5000/api/v1/projects`
+3. **Body Tab:** Select `raw`, paste `{"name":"test"}`
+4. **IMPORTANT:** Do NOT set Content-Type header (remove it if auto-added)
+5. Click **Send**
+6. **Expected:** Status `415 Unsupported Media Type`
+
+#### Browser Console:
+```javascript
+// Test WITHOUT Content-Type - Should return 415
+fetch('http://localhost:5000/api/v1/projects', {
+  method: 'POST',
+  body: '{"name":"test"}'
+  // No Content-Type header!
+})
+  .then(response => {
+    console.log('=== Content-Type Validation Test (No Header) ===');
+    console.log('Status:', response.status, response.statusText);
+    console.log('Expected: 415 Unsupported Media Type');
+    return response.json();
+  })
+  .then(data => console.log('Response:', data))
+  .catch(err => console.log('Error:', err));
 ```
 
-**Expected Headers:**
-```
-Strict-Transport-Security: max-age=31536000; includeSubDomains
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 1; mode=block
-Referrer-Policy: strict-origin-when-cross-origin
-Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
-Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+### Test 2: WITH Content-Type (Should Pass)
+
+#### Postman:
+1. **Method:** `POST`
+2. **URL:** `http://localhost:5000/api/v1/projects`
+3. **Headers Tab:** Add `Content-Type: application/json`
+4. **Body Tab:** Select `raw` > `JSON`, paste `{"name":"test"}`
+5. Click **Send**
+6. **Expected:** NOT 415 (will be 401 if no auth, but Content-Type passed)
+
+#### Browser Console:
+```javascript
+// Test WITH Content-Type - Should NOT return 415
+fetch('http://localhost:5000/api/v1/projects', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ name: 'test' })
+})
+  .then(response => {
+    console.log('=== Content-Type Validation Test (With Header) ===');
+    console.log('Status:', response.status, response.statusText);
+    console.log('Expected: NOT 415 (likely 401 if not authenticated)');
+    return response.json();
+  })
+  .then(data => console.log('Response:', data));
 ```
 
 ---
 
-## 3. Content-Type Validation
+## 3. Request Deduplication (Idempotency-Key)
 
-**What it does:** Rejects POST/PUT/PATCH/DELETE requests without valid Content-Type headers.
+**What it does:** Prevents duplicate submissions. Same `Idempotency-Key` returns cached response.
 
-### Test 1: Request WITHOUT Content-Type (Should Fail)
-```bash
-curl -X POST http://localhost:5000/api/v1/projects \
-  -d '{"name":"test"}' \
-  -w "\nStatus: %{http_code}\n"
-```
+### Test: Send Same Request Twice
 
-**Expected Response:**
-- Status: **415 Unsupported Media Type**
-- Message: `Missing or invalid Content-Type header`
+#### Postman:
+**Request 1 (First Send):**
+1. **Method:** `POST`
+2. **URL:** `http://localhost:5000/api/v1/projects`
+3. **Headers:**
+   - `Content-Type: application/json`
+   - `Authorization: Bearer YOUR_TOKEN`
+   - `X-Project-Id: YOUR_PROJECT_ID`
+   - `Idempotency-Key: test-key-12345`
+4. **Body:** `{"name":"my-project"}`
+5. Click **Send**
+6. Check response headers for `Idempotency-Replayed: false` (or absent)
 
-### Test 2: Request WITH Content-Type (Should Pass)
-```bash
-curl -X POST http://localhost:5000/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "X-Project-Id: YOUR_PROJECT_ID" \
-  -d '{"name":"test-project"}' \
-  -w "\nStatus: %{http_code}\n"
-```
+**Request 2 (Exact Same - Should Replay):**
+1. Click **Send** again (same request)
+2. Check response headers for `Idempotency-Replayed: true`
+3. Response body should be IDENTICAL to first request
 
-**Expected Response:**
-- Status: **201** or **400** (depends on valid token/payload)
-- NOT 415 (meaning Content-Type validation passed)
+#### Browser Console:
+```javascript
+// Idempotency Test - Run this twice!
+const idempotencyKey = 'browser-test-' + Date.now(); // Use same key for both calls
 
-### Postman Test:
-1. **Tab 1 - Without Content-Type:**
-   - Method: `POST`
-   - URL: `http://localhost:5000/api/v1/projects`
-   - Body: `{"name":"test"}` (raw)
-   - **Do NOT add Content-Type header**
-   - Expected: `415 Unsupported Media Type`
-
-2. **Tab 2 - With Content-Type:**
-   - Method: `POST`
-   - URL: `http://localhost:5000/api/v1/projects`
-   - Headers: Add `Content-Type: application/json`
-   - Body: `{"name":"test"}` (raw)
-   - Expected: Pass through (status depends on auth/validation)
-
----
-
-## 4. Request Deduplication (Idempotency-Key)
-
-**What it does:** Prevents duplicate submissions by replaying cached responses. Scoped per project.
-
-### Test 1: First Request (Cache Miss)
-```bash
-curl -X POST http://localhost:5000/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "X-Project-Id: YOUR_PROJECT_ID" \
-  -H "Idempotency-Key: test-key-123" \
-  -d '{"name":"unique-project-1"}' \
-  -w "\nStatus: %{http_code}\nIdempotency-Replayed: %{header_idempotency-replayed}\n"
-```
-
-**Expected Response:**
-- Status: **201** (or appropriate success code)
-- Header: `Idempotency-Replayed: false` (or absent)
-
-### Test 2: Repeat Same Request (Cache Hit - Should Replay)
-```bash
-# Run the EXACT same command again
-curl -X POST http://localhost:5000/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "X-Project-Id: YOUR_PROJECT_ID" \
-  -H "Idempotency-Key: test-key-123" \
-  -d '{"name":"unique-project-1"}' \
-  -w "\nStatus: %{http_code}\nIdempotency-Replayed: %{header_idempotency-replayed}\n"
-```
-
-**Expected Response:**
-- Status: **201** (same as first request)
-- Header: `Idempotency-Replayed: true` ✓
-- Body: **Identical to first response** (cached)
-
-### Test 3: Concurrent Requests (Should Conflict)
-```bash
-# Run two identical requests simultaneously
-for i in {1..2}; do
-  curl -X POST http://localhost:5000/api/v1/projects \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_TOKEN" \
-    -H "X-Project-Id: YOUR_PROJECT_ID" \
-    -H "Idempotency-Key: test-key-concurrent" \
-    -d '{"name":"concurrent-test"}' &
-done
-wait
-```
-
-**Expected Response:**
-- First request: **201** (success)
-- Second request: **409 Conflict** (concurrent request detected)
-
-### Postman Collection:
-```json
-{
-  "info": {"name": "Idempotency Tests"},
-  "item": [
-    {
-      "name": "First Request",
-      "request": {
-        "method": "POST",
-        "url": "http://localhost:5000/api/v1/projects",
-        "header": [
-          {"key": "Content-Type", "value": "application/json"},
-          {"key": "Authorization", "value": "Bearer {{TOKEN}}"},
-          {"key": "X-Project-Id", "value": "{{PROJECT_ID}}"},
-          {"key": "Idempotency-Key", "value": "test-123"}
-        ],
-        "body": {"raw": "{\"name\":\"test\"}"}
-      }
+async function testIdempotency() {
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer YOUR_TOKEN',  // Replace with real token
+      'X-Project-Id': 'YOUR_PROJECT_ID',     // Replace with real project ID
+      'Idempotency-Key': idempotencyKey
     },
-    {
-      "name": "Replay (Should Show Idempotency-Replayed: true)",
-      "request": {
-        "method": "POST",
-        "url": "http://localhost:5000/api/v1/projects",
-        "header": [
-          {"key": "Content-Type", "value": "application/json"},
-          {"key": "Authorization", "value": "Bearer {{TOKEN}}"},
-          {"key": "X-Project-Id", "value": "{{PROJECT_ID}}"},
-          {"key": "Idempotency-Key", "value": "test-123"}
-        ],
-        "body": {"raw": "{\"name\":\"test\"}"}
-      }
-    }
-  ]
+    body: JSON.stringify({ name: 'idempotency-test-project' })
+  };
+
+  console.log('=== Idempotency Test ===');
+  console.log('Using Idempotency-Key:', idempotencyKey);
+
+  // First request
+  console.log('\n--- First Request ---');
+  const response1 = await fetch('http://localhost:5000/api/v1/projects', options);
+  console.log('Status:', response1.status);
+  console.log('Idempotency-Replayed:', response1.headers.get('Idempotency-Replayed'));
+  const data1 = await response1.json();
+  console.log('Response:', data1);
+
+  // Second request (should be replayed)
+  console.log('\n--- Second Request (Should Replay) ---');
+  const response2 = await fetch('http://localhost:5000/api/v1/projects', options);
+  console.log('Status:', response2.status);
+  console.log('Idempotency-Replayed:', response2.headers.get('Idempotency-Replayed'));
+  console.log('Expected: true');
+  const data2 = await response2.json();
+  console.log('Response:', data2);
+
+  console.log('\n--- Comparison ---');
+  console.log('Responses match:', JSON.stringify(data1) === JSON.stringify(data2));
 }
+
+testIdempotency();
 ```
 
 ---
 
-## 5. Distributed Rate Limiting
+## 4. Distributed Rate Limiting
 
-**What it does:** Prevents brute force attacks using Redis-backed request counting (works across multiple server instances).
+**What it does:** Limits requests per IP/user. Returns `429` when exceeded.
 
-### Test 1: Check Rate Limit Headers
-```bash
-curl -v http://localhost:5000/health 2>&1 | grep -i "X-RateLimit"
+### Test: Check Rate Limit Headers
+
+#### Postman:
+1. **Method:** `GET`
+2. **URL:** `http://localhost:5000/health`
+3. Click **Send**
+4. Check **Headers** tab for:
+   - `X-RateLimit-Limit: 10000`
+   - `X-RateLimit-Remaining: 9999`
+   - `X-RateLimit-Reset: <timestamp>`
+
+#### Browser Console:
+```javascript
+// Check Rate Limit Headers
+fetch('http://localhost:5000/health')
+  .then(response => {
+    console.log('=== Rate Limit Headers ===');
+    console.log('X-RateLimit-Limit:', response.headers.get('X-RateLimit-Limit'));
+    console.log('X-RateLimit-Remaining:', response.headers.get('X-RateLimit-Remaining'));
+    console.log('X-RateLimit-Reset:', response.headers.get('X-RateLimit-Reset'));
+    return response.json();
+  })
+  .then(data => console.log('Response:', data));
 ```
 
-**Expected Response Headers:**
-```
-X-RateLimit-Limit: 10000
-X-RateLimit-Remaining: 9999
-X-RateLimit-Reset: 1710432000
-```
+### Stress Test (Multiple Requests):
+```javascript
+// Send 20 requests rapidly and watch the rate limit decrease
+async function stressTestRateLimit() {
+  console.log('=== Rate Limit Stress Test ===');
+  
+  for (let i = 1; i <= 20; i++) {
+    const response = await fetch('http://localhost:5000/health');
+    const remaining = response.headers.get('X-RateLimit-Remaining');
+    console.log(`Request ${i}: Status ${response.status}, Remaining: ${remaining}`);
+    
+    if (response.status === 429) {
+      console.log('Rate limit exceeded!');
+      const data = await response.json();
+      console.log('Response:', data);
+      break;
+    }
+  }
+}
 
-### Test 2: Exceed Rate Limit (stress test - requires ~10k requests)
-```bash
-# Send 100 requests rapidly
-for i in {1..100}; do
-  curl -s -o /dev/null -w "Status: %{http_code}\n" http://localhost:5000/health
-done
+stressTestRateLimit();
 ```
-
-**Expected:**
-- First requests: Status **200**
-- After limit exceeded: Status **429 Too Many Requests**
-
-### Postman Collection:
-1. Create request to `GET http://localhost:5000/health`
-2. **Pre-request Script:**
-   ```javascript
-   // This will send 10 requests and track rate limit headers
-   for (let i = 0; i < 10; i++) {
-     pm.sendRequest({
-       url: "http://localhost:5000/health",
-       method: "GET"
-     }, (err, response) => {
-       console.log(`Request ${i + 1}: ${response.code}`);
-       console.log(`Remaining: ${response.headers.get("X-RateLimit-Remaining")}`);
-     });
-   }
-   ```
 
 ---
 
-## 6. Bandwidth-Based Rate Limiting
+## 5. Bandwidth-Based Rate Limiting
 
-**What it does:** Detects resource exhaustion attacks by limiting total request bytes per time window.
+**What it does:** Limits total request bytes. Returns `413` for oversized requests, `429` when bandwidth exceeded.
 
-### Test 1: Single Large Request (Should Fail with 413)
-```bash
-# Create a 15MB payload (exceeds MAX_SINGLE_REQUEST_BYTES=10MB)
-LARGE_DATA=$(perl -e 'print "x" x (15*1024*1024)' 2>/dev/null || head -c 15M </dev/zero | tr '\0' 'x')
+### Test 1: Oversized Single Request (Should Return 413)
 
-curl -X POST http://localhost:5000/api/v1/bulk \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "X-Project-Id: YOUR_PROJECT_ID" \
-  -d "{\"data\":\"$LARGE_DATA\"}" \
-  -w "\nStatus: %{http_code}\n"
+#### Postman:
+1. **Method:** `POST`
+2. **URL:** `http://localhost:5000/api/v1/documents`
+3. **Headers:** `Content-Type: application/json`
+4. **Body:** Create a JSON with 15MB+ of data
+5. **Expected:** Status `413 Payload Too Large`
+
+#### Browser Console:
+```javascript
+// Test oversized request (15MB payload)
+const largeData = 'x'.repeat(15 * 1024 * 1024); // 15MB of 'x'
+
+fetch('http://localhost:5000/api/v1/documents', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_TOKEN',
+    'X-Project-Id': 'YOUR_PROJECT_ID'
+  },
+  body: JSON.stringify({ data: largeData })
+})
+  .then(response => {
+    console.log('=== Bandwidth Test (Large Request) ===');
+    console.log('Status:', response.status, response.statusText);
+    console.log('Expected: 413 Payload Too Large');
+    return response.json();
+  })
+  .then(data => console.log('Response:', data))
+  .catch(err => console.log('Error:', err));
 ```
 
-**Expected Response:**
-- Status: **413 Payload Too Large**
-- Message: `Request exceeds maximum single request size`
+### Test 2: Check Bandwidth Headers
 
-### Test 2: Multiple Medium Requests (Should Track Bandwidth)
-```bash
-for i in {1..5}; do
-  curl -X POST http://localhost:5000/api/v1/documents \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_TOKEN" \
-    -H "X-Project-Id: YOUR_PROJECT_ID" \
-    -d '{"data":"'$(head -c 5M </dev/zero | tr '\0' 'x')'"}'
-    -i 2>&1 | grep -E "Status|X-Bandwidth"
-done
+#### Browser Console:
+```javascript
+// Send medium request and check bandwidth headers
+const mediumData = 'x'.repeat(1 * 1024 * 1024); // 1MB
+
+fetch('http://localhost:5000/api/v1/documents', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_TOKEN',
+    'X-Project-Id': 'YOUR_PROJECT_ID'
+  },
+  body: JSON.stringify({ data: mediumData })
+})
+  .then(response => {
+    console.log('=== Bandwidth Headers ===');
+    console.log('X-Bandwidth-Limit:', response.headers.get('X-Bandwidth-Limit'));
+    console.log('X-Bandwidth-Used:', response.headers.get('X-Bandwidth-Used'));
+    console.log('X-Bandwidth-Remaining:', response.headers.get('X-Bandwidth-Remaining'));
+    return response.json();
+  })
+  .then(data => console.log('Response:', data));
 ```
-
-**Expected Response Headers:**
-```
-X-Bandwidth-Limit: 52428800
-X-Bandwidth-Used: 5242880 (increases with each request)
-X-Bandwidth-Remaining: 47185920 (decreases with each request)
-```
-
-### Test 3: Exceed Bandwidth Limit (Should Return 429)
-```bash
-# Send multiple large requests to exceed BANDWIDTH_LIMIT_BYTES=50MB
-for i in {1..20}; do
-  curl -s -X POST http://localhost:5000/api/v1/documents \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_TOKEN" \
-    -d '{"data":"'$(head -c 3M </dev/zero | tr '\0' 'x')'"}'
-    -w "Request $i - Status: %{http_code}\n" -o /dev/null
-done
-```
-
-**Expected:**
-- Requests: Status **201/200** until bandwidth limit exceeded
-- Final requests: Status **429 Too Many Requests** with message `Bandwidth limit exceeded`
-
-### Postman Test:
-1. **Tab - Large Single Request:**
-   - Method: `POST`
-   - URL: `http://localhost:5000/api/v1/bulk`
-   - Headers: `Content-Type: application/json`, `Authorization: Bearer YOUR_TOKEN`
-   - Body (raw): Large JSON with 15MB+ data
-   - Expected: `413 Payload Too Large`
-
-2. **Tab - Multiple Medium Requests:**
-   - Run same POST request 5 times
-   - Watch `X-Bandwidth-Remaining` header decrease
-   - When it reaches 0: Status **429**
 
 ---
 
-## 7. CORS Preflight Caching
+## 6. CORS Preflight Caching
 
-**What it does:** Caches preflight responses for 24 hours, reducing server load.
+**What it does:** Caches preflight responses for 24 hours (86400 seconds).
 
-### Test: Check CORS Preflight Response
-```bash
-curl -i -X OPTIONS http://localhost:5000/api/v1/projects \
-  -H "Origin: http://localhost:3000" \
-  -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: Content-Type"
+### Postman:
+1. **Method:** `OPTIONS`
+2. **URL:** `http://localhost:5000/api/v1/projects`
+3. **Headers:**
+   - `Origin: http://localhost:3000`
+   - `Access-Control-Request-Method: POST`
+   - `Access-Control-Request-Headers: Content-Type`
+4. Click **Send**
+5. Check response headers for:
+   - `Access-Control-Max-Age: 86400`
+   - `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE`
+
+### Browser Console:
+```javascript
+// Test CORS Preflight
+fetch('http://localhost:5000/api/v1/projects', {
+  method: 'OPTIONS',
+  headers: {
+    'Origin': 'http://localhost:3000',
+    'Access-Control-Request-Method': 'POST',
+    'Access-Control-Request-Headers': 'Content-Type'
+  }
+})
+  .then(response => {
+    console.log('=== CORS Preflight Headers ===');
+    console.log('Access-Control-Max-Age:', response.headers.get('Access-Control-Max-Age'));
+    console.log('Expected: 86400 (24 hours)');
+    console.log('Access-Control-Allow-Methods:', response.headers.get('Access-Control-Allow-Methods'));
+    console.log('Access-Control-Allow-Headers:', response.headers.get('Access-Control-Allow-Headers'));
+  });
 ```
-
-**Expected Response:**
-```
-HTTP/1.1 204 No Content
-Access-Control-Allow-Origin: http://localhost:3000
-Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE
-Access-Control-Allow-Headers: Content-Type, Authorization, X-Project-Id, X-Request-Id, X-API-Key, Idempotency-Key
-Access-Control-Max-Age: 86400
-Access-Control-Expose-Headers: X-Request-Id, X-RateLimit-*, X-Bandwidth-*
-```
-
-### Browser DevTools Test:
-1. Open DevTools (F12)
-2. Go to **Network** tab
-3. Visit your frontend on `http://localhost:3000`
-4. Look for OPTIONS requests - they should have:
-   - `Access-Control-Max-Age: 86400` (caches for 24 hours)
-   - Status: **204** (should be fast)
 
 ---
 
-## 8. Full Integration Test (Simulating Real Usage)
+## 7. Full Integration Test
 
-### Scenario: Creating a project with proper security
+Run this comprehensive test in the browser console:
 
-```bash
-# Step 1: Create project with valid headers and idempotency
-PROJECT_ID="proj_$(date +%s)"
-IDEMPOTENT_KEY="create_project_$(date +%s)"
+```javascript
+async function fullSecurityTest() {
+  const BASE_URL = 'http://localhost:5000';
+  const results = [];
 
-curl -X POST http://localhost:5000/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: $IDEMPOTENT_KEY" \
-  -d "{
-    \"name\": \"my-app-$(date +%s)\",
-    \"description\": \"Test project\"
-  }" \
-  -w "\nStatus: %{http_code}\n" \
-  -v
+  console.log('========================================');
+  console.log('   v0.1.4-alpha.1 Security Patch Test');
+  console.log('========================================\n');
 
-# Step 2: Verify security headers in response
-echo ""
-echo "Security headers verified ✓"
+  // Test 1: Security Headers
+  console.log('1. Testing Security Headers...');
+  try {
+    const res = await fetch(`${BASE_URL}/health`);
+    const hasHSTS = !!res.headers.get('Strict-Transport-Security');
+    const hasXFrame = !!res.headers.get('X-Frame-Options');
+    const hasXContent = !!res.headers.get('X-Content-Type-Options');
+    results.push({ test: 'Security Headers', pass: hasHSTS && hasXFrame && hasXContent });
+    console.log('   HSTS:', hasHSTS ? 'PASS' : 'FAIL');
+    console.log('   X-Frame-Options:', hasXFrame ? 'PASS' : 'FAIL');
+    console.log('   X-Content-Type-Options:', hasXContent ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Security Headers', pass: false, error: e.message });
+  }
 
-# Step 3: Retry with same Idempotency-Key (should get cached response)
-curl -X POST http://localhost:5000/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: $IDEMPOTENT_KEY" \
-  -d "{
-    \"name\": \"different-name\",
-    \"description\": \"Should be ignored\"
-  }" \
-  -w "\nStatus: %{http_code}\nIdempotency-Replayed: %{header_idempotency-replayed}\n"
+  // Test 2: Content-Type Validation
+  console.log('\n2. Testing Content-Type Validation...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'POST',
+      body: '{"name":"test"}'
+      // No Content-Type header
+    });
+    const pass = res.status === 415;
+    results.push({ test: 'Content-Type Validation', pass });
+    console.log('   Status:', res.status, pass ? 'PASS (Expected 415)' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Content-Type Validation', pass: false, error: e.message });
+  }
+
+  // Test 3: Rate Limit Headers
+  console.log('\n3. Testing Rate Limit Headers...');
+  try {
+    const res = await fetch(`${BASE_URL}/health`);
+    const hasLimit = !!res.headers.get('X-RateLimit-Limit');
+    const hasRemaining = !!res.headers.get('X-RateLimit-Remaining');
+    results.push({ test: 'Rate Limit Headers', pass: hasLimit && hasRemaining });
+    console.log('   X-RateLimit-Limit:', hasLimit ? 'PASS' : 'FAIL');
+    console.log('   X-RateLimit-Remaining:', hasRemaining ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'Rate Limit Headers', pass: false, error: e.message });
+  }
+
+  // Test 4: CORS Preflight
+  console.log('\n4. Testing CORS Preflight Caching...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/projects`, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': 'http://localhost:3000',
+        'Access-Control-Request-Method': 'POST'
+      }
+    });
+    const maxAge = res.headers.get('Access-Control-Max-Age');
+    const pass = maxAge === '86400';
+    results.push({ test: 'CORS Preflight Cache', pass });
+    console.log('   Access-Control-Max-Age:', maxAge, pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    results.push({ test: 'CORS Preflight Cache', pass: false, error: e.message });
+  }
+
+  // Summary
+  console.log('\n========================================');
+  console.log('   TEST SUMMARY');
+  console.log('========================================');
+  const passed = results.filter(r => r.pass).length;
+  const total = results.length;
+  console.log(`   ${passed}/${total} tests passed\n`);
+  results.forEach(r => {
+    console.log(`   ${r.pass ? 'PASS' : 'FAIL'} - ${r.test}`);
+  });
+  console.log('========================================');
+
+  return results;
+}
+
+// Run the full test
+fullSecurityTest();
 ```
+
+---
+
+## Quick Reference Table
+
+| Feature | Postman Test | Expected Result |
+|---------|--------------|-----------------|
+| **Security Headers** | `GET /health` > Check Headers tab | See HSTS, X-Frame-Options, etc. |
+| **Content-Type** | `POST /api/v1/projects` without Content-Type | `415 Unsupported Media Type` |
+| **Idempotency** | Send same POST twice with `Idempotency-Key` header | 2nd response has `Idempotency-Replayed: true` |
+| **Rate Limit** | `GET /health` > Check Headers tab | `X-RateLimit-Limit`, `X-RateLimit-Remaining` |
+| **Bandwidth** | `POST` with 15MB+ body | `413 Payload Too Large` |
+| **CORS Preflight** | `OPTIONS /api/v1/projects` with Origin header | `Access-Control-Max-Age: 86400` |
 
 ---
 
 ## Troubleshooting
 
-### Error: "Redis connection failed"
-- Ensure Redis is running: `redis-cli ping` should return `PONG`
-- Check `REDIS_URL` or `REDIS_PASSWORD` in `.env`
-
-### Error: "Rate limit middleware failed to initialize"
-- In production, Redis is required. Set valid Redis connection
-- In development, rate limiting may use in-memory fallback
-
-### Error: "Content-Type validation error" when it shouldn't fail
-- Ensure `CONTENT_TYPE_VALIDATION=true` in `.env`
-- Always include `Content-Type: application/json` header for body-carrying methods
-
-### Idempotency not working
-- Ensure `IDEMPOTENCY_ENABLED=true` in `.env`
-- Verify Redis is connected for distributed idempotency
-- Key must be same across requests and scoped to project
-
----
-
-## Environment Verification Script
-
-Run this to verify all security features are enabled:
-
-```bash
-#!/bin/bash
-
-echo "=== Security Feature Status ==="
-echo ""
-
-# Check env variables
-echo "✓ ENABLE_SECURITY_HEADERS=${ENABLE_SECURITY_HEADERS:-true}"
-echo "✓ CONTENT_TYPE_VALIDATION=${CONTENT_TYPE_VALIDATION:-true}"
-echo "✓ IDEMPOTENCY_ENABLED=${IDEMPOTENCY_ENABLED:-true}"
-echo "✓ ENFORCE_HTTPS=${ENFORCE_HTTPS:-true}"
-echo "✓ MAX_SINGLE_REQUEST_BYTES=${MAX_SINGLE_REQUEST_BYTES:-10485760}"
-echo "✓ BANDWIDTH_LIMIT_BYTES=${BANDWIDTH_LIMIT_BYTES:-52428800}"
-echo ""
-
-# Test server health
-echo "Testing server health..."
-curl -s http://localhost:5000/health > /dev/null && echo "✓ Server is running" || echo "✗ Server is not responding"
-```
-
----
-
-## Summary
-
-| Feature | Test Command | Expected |
-|---------|--------------|----------|
-| **Security Headers** | `curl -i http://localhost:5000/health` | See HSTS, CSP, X-Frame headers |
-| **Content-Type** | POST without header | **415** Unsupported Media Type |
-| **Idempotency** | Send same request twice | **2nd has `Idempotency-Replayed: true`** |
-| **Bandwidth** | Send 15MB request | **413** Payload Too Large |
-| **Rate Limit** | Repeated requests | See `X-RateLimit-*` headers |
-| **CORS Preflight** | OPTIONS request | `Access-Control-Max-Age: 86400` |
+| Issue | Solution |
+|-------|----------|
+| **CORS errors in browser** | Run tests from same origin or use Postman |
+| **Redis connection failed** | Ensure Redis is running, check `REDIS_URL` in `.env` |
+| **Content-Type test passing when it shouldn't** | Ensure `CONTENT_TYPE_VALIDATION=true` in `.env` |
+| **Idempotency not working** | Ensure `IDEMPOTENCY_ENABLED=true` and Redis is connected |
+| **No rate limit headers** | Check if rate limiting middleware is enabled |
