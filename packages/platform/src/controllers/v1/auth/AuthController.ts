@@ -292,6 +292,14 @@ export const verifyToken = async (req: Request, res: Response) => {
     const accessToken = req.cookies.accessToken
     const refreshToken = req.cookies.refreshToken
 
+    console.log("[v0] verifyToken called - cookies received:", {
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+      accessTokenLength: accessToken?.length,
+      refreshTokenLength: refreshToken?.length,
+      allCookies: Object.keys(req.cookies || {}),
+    })
+
     if (accessToken) {
       try {
         const decoded = await tokenService.verifyAccessToken(accessToken)
