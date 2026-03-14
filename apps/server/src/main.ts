@@ -16,7 +16,8 @@ import { errorHandler as platformErrorHandler } from '@mavibase/platform/middlew
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', true);
+
+app.set('trust proxy', 1);
 
 // Setup unified middleware for both services FIRST - applies to all routes
 setupMiddleware(app);  // Unified middleware (CORS, security, body parsing)
