@@ -8,6 +8,11 @@ const dbUrl = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : "http://localhost:5000/api"
 
+// Debug logging for URL configuration
+console.log("[v0] axios-instance NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL)
+console.log("[v0] axios-instance authUrl:", authUrl)
+console.log("[v0] axios-instance dbUrl:", dbUrl)
+
 interface AxiosNamespace {
   get: (url: string, config?: any) => Promise<any>;
   post: (url: string, data?: any, config?: any) => Promise<any>;
@@ -42,15 +47,18 @@ export function clearRequestContext() {
 
 // Auth namespace — platform API, includes X-Team-Id and X-Project-Id when available
 axiosInstance.auth = {
-  get: (url: string, config?: any) =>
-    axiosInstance.get(`${authUrl}${url}`, {
+  get: (url: string, config?: any) => {
+    const fullUrl = `${authUrl}${url}`
+    console.log("[v0] auth.get called with url:", url, "fullUrl:", fullUrl)
+    return axiosInstance.get(fullUrl, {
       ...config,
       headers: {
         ...config?.headers,
         ...(_teamId && { "X-Team-Id": _teamId }),
         ...(_projectId && { "X-Project-Id": _projectId }),
       },
-    }),
+    })
+  },
   post: (url: string, data?: any, config?: any) =>
     axiosInstance.post(`${authUrl}${url}`, data, {
       ...config,
