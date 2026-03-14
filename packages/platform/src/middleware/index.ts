@@ -17,10 +17,20 @@ import { bandwidthLimiter } from "./bandwidth-limiter"
  * Handles CORS, security headers, body parsing, and cookies
  */
 export const setupMiddleware = (app: Express) => {
+  console.log("[v0] setupMiddleware called")
+  
   // Parse ALLOWED_ORIGINS into an array if it contains commas
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : ["http://localhost:3000"]
+  
+  console.log("[v0] ALLOWED_ORIGINS:", allowedOrigins)
+  
+  // Debug middleware to log all incoming requests
+  app.use((req, res, next) => {
+    console.log(`[v0] Incoming request: ${req.method} ${req.path} from origin: ${req.headers.origin}`)
+    next()
+  })
   
   // CORS configuration - MUST be first to handle preflight OPTIONS requests
   // If CORS is not first, preflight requests may fail before getting CORS headers

@@ -288,9 +288,13 @@ export const resendVerification = async (req: Request, res: Response) => {
 }
 
 export const verifyToken = async (req: Request, res: Response) => {
+  console.log("[v0] verifyToken endpoint hit")
+  console.log("[v0] cookies:", req.cookies)
   try {
     const accessToken = req.cookies.accessToken
     const refreshToken = req.cookies.refreshToken
+    console.log("[v0] accessToken exists:", !!accessToken)
+    console.log("[v0] refreshToken exists:", !!refreshToken)
 
     if (accessToken) {
       try {

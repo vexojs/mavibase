@@ -47,10 +47,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [])
 
   const verifyAuthentication = async () => {
+    console.log("[v0] verifyAuthentication called")
     try {
+      console.log("[v0] Making GET request to /auth/verify-token")
       const res = await axiosInstance.auth.get("/auth/verify-token", {
         withCredentials: true,
       })
+      console.log("[v0] verify-token response:", res.data)
 
       if (res.data.success && res.data.data?.user) {
         const freshUser = res.data.data.user
@@ -62,6 +65,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return null
       }
     } catch (err: any) {
+      console.log("[v0] verify-token error:", err.message, err.response?.status, err.code)
       if (err.response?.status === 401) {
         try {
           await axiosInstance.auth.post("/auth/refresh-token")
