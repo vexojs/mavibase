@@ -5,8 +5,11 @@ import { logger } from "../utils/logger"
 import { getRedisClient } from "@mavibase/database/config/redis"
 
 const windowMs = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || "900000") // 15 minutes default
-const maxRequests = Number.parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "1000")
 const isProduction = process.env.NODE_ENV === "production"
+// In development, use very high limit so headers are sent but you won't hit the limit
+const maxRequests = isProduction 
+  ? Number.parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "1000")
+  : 1000000
 
 // Initialize Redis client for distributed rate limiting
 let redisClient: ReturnType<typeof getRedisClient> | null = null
@@ -61,11 +64,11 @@ export const rateLimiter = rateLimit({
       message: "Too many requests from this IP, please try again later",
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true,  // Sends RateLimit-* headers (modern standard)
+  legacyHeaders: true,   // Also sends X-RateLimit-* headers (for compatibility)
   // Use Redis store for distributed rate limiting (required in production)
   store: redisStore ?? undefined,
-  skip: (req) => process.env.NODE_ENV === "development",
+  // Don't skip - we need headers in all environments. Dev uses 1M limit instead.
   handler: (req: Request, res: Response) => {
     logger.warn("Rate limit exceeded", { 
       ip: req.ip, 
@@ -101,7 +104,7 @@ export const authRateLimiter = rateLimit({
   windowMs: lockoutDuration * 60 * 1000,
   max: maxLoginAttempts,
   skipSuccessfulRequests: true,
-  skip: (req) => process.env.NODE_ENV === "development",
+  // Don't skip - we need headers in all environments. Dev uses 1M limit instead.
   // Use Redis store for distributed rate limiting (required in production)
   store: authRedisStore ?? undefined,
   message: {
