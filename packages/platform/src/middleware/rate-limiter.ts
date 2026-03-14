@@ -20,16 +20,22 @@ try {
   redisClient = getRedisClient()
   
   // Create Redis store for general rate limiting
+  // ioredis uses .call(command, ...args) but rate-limit-redis expects sendCommand(...args)
   redisStore = new RedisStore({
-    // @ts-expect-error - ioredis is compatible with rate-limit-redis
-    sendCommand: (...args: string[]) => redisClient!.call(...args),
+    sendCommand: async (...args: string[]) => {
+      // First arg is command name, rest are arguments
+      const [command, ...commandArgs] = args
+      return redisClient!.call(command, ...commandArgs) as Promise<any>
+    },
     prefix: "rl:platform:",
   })
   
   // Create separate Redis store for auth rate limiting
   authRedisStore = new RedisStore({
-    // @ts-expect-error - ioredis is compatible with rate-limit-redis
-    sendCommand: (...args: string[]) => redisClient!.call(...args),
+    sendCommand: async (...args: string[]) => {
+      const [command, ...commandArgs] = args
+      return redisClient!.call(command, ...commandArgs) as Promise<any>
+    },
     prefix: "rl:auth:",
   })
   
