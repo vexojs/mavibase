@@ -17,19 +17,13 @@ import { bandwidthLimiter } from "./bandwidth-limiter"
  * Handles CORS, security headers, body parsing, and cookies
  */
 export const setupMiddleware = (app: Express) => {
-  // HTTPS enforcement (must be first - redirects HTTP to HTTPS in production)
-  app.use(httpsEnforcement)
-  
-  app.use(requestId)
-  app.use(attachClientIp)
-  app.use(requestLogger)
-  
   // Parse ALLOWED_ORIGINS into an array if it contains commas
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : ["http://localhost:3000"]
   
-  // CORS configuration - apply to all routes
+  // CORS configuration - MUST be first to handle preflight OPTIONS requests
+  // If CORS is not first, preflight requests may fail before getting CORS headers
   // maxAge: Browser caches preflight response for 24 hours (reduces OPTIONS requests)
   const corsMaxAge = parseInt(process.env.CORS_MAX_AGE || "86400", 10)
   
@@ -61,6 +55,13 @@ export const setupMiddleware = (app: Express) => {
       maxAge: corsMaxAge, // Preflight cache duration in seconds (default: 24 hours)
     }),
   )
+
+  // HTTPS enforcement (after CORS so preflight requests work correctly)
+  app.use(httpsEnforcement)
+  
+  app.use(requestId)
+  app.use(attachClientIp)
+  app.use(requestLogger)
 
   // Security headers (helmet + custom HSTS/CSP)
   app.use(helmet())
